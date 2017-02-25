@@ -149,6 +149,42 @@ def collapse_to_reference(hq_fq, gmap_db, gmap_name, hq_lq_prefix_pickle,
     return out_rep_fq, out_rep_sam
 
 
+def filter_sam_by_targets(in_sam, targets, out_sam, filtered_sam):
+    """ Read alignments in in_sam, copy alignments with targe name in targets to out_sam,
+    write other alignments to filtered_sam."""
+    log.info("Writing alignments mapping to %r in %s", targets, out_sam)
+    log.info("Writing alignments not mapping to %r in %s", targets, filtered_sam)
+    out_writer = open(out_sam, 'w')
+    filtered_writer = open(filtered_sam, 'w')
+    for line in open(in_sam, 'r'):
+        if line.startswith('#') or line.startswith('@'):
+            # copy header to both out_sam and filtered_sam
+            out_writer.write(line)
+            filtered_writer.write(line)
+        else:
+            if len(line.strip()) == 0:
+                continue
+            else:
+                target = line.split('\t')[2].strip()
+                if target in targets:
+                    out_writer.write(line)
+                else:
+                    filtered_writer.write(line)
+    out_writer.close()
+    filtered_writer.close()
+
+def get_gtf_chromosomes(gtf_fn):
+    """Return a set of chromosomes in gtf"""
+    chrs = set()
+    with open(gtf_fn, 'r') as reader:
+        for line in reader:
+            if line.startswith('#') or len(line.strip()) == 0:
+                continue
+            else:
+                chrs.add(line.split('\t')[0])
+    return chrs
+
+
 def validate_with_Gencode(sorted_rep_sam, gencode_gtf, match_out):
     """
     Input:
@@ -156,6 +192,16 @@ def validate_with_Gencode(sorted_rep_sam, gencode_gtf, match_out):
       eval_dir -- evaluation directory
     Run matchAnnot to compare sorted_rep_sam with gencode v25 and output to eval_dir
     """
+    # MUST remove sorted_rep_sam alignments which map to chromosomes not in gencode gtf
+    # (e.g., human transcripts which map to scaffolds rather than chromosome 1-22 and XYM)
+    gtf_chrs = get_gtf_chromosomes(gencode_gtf)
+    # Must filter alignments mapping to human scaffold, otherwise, matchAnnot would fail
+    log.info("Filtering alignments not mapping to %r", gtf_chrs)
+    out_sam = sorted_rep_sam + ".gtf_chrs.sam"
+    filtered_sam = sorted_rep_sam + ".not_gtf_chrs.sam"
+    filter_sam_by_targets(in_sam=sorted_rep_sam, targets=gtf_chrs,
+                          out_sam=out_sam, filtered_sam=filtered_sam)
+
     log.info("Writing matchAnnot output to %s", match_out)
     cmd = "matchAnnot.py --gtf={0} {1} > {2}".format(gencode_gtf, sorted_rep_sam, match_out)
     execute(cmd)
@@ -179,9 +225,8 @@ def check_matchAnnot_out(match_out):
             if "isoforms scored %s" % score in l:
                 ns[score] = [int(s.replace(',', '')) for s in l.split()
                              if s.replace(',', '').isdigit()][0]
-    if sum(ns) != total_n:
-        raise ValueError("MatchAnnot %s (%s isoforms read != %s isoforms classified)"
-                         % (match_out, total_n, sum(ns)))
+    # sum(ns): total number of isoforms hit at least one gene
+    # total_n: total number of isoforms read
     return total_n, ns
 
 
@@ -191,7 +236,7 @@ def make_sane(args):
     args.val_dir = realpath(args.val_dir)
 
     if args.gmap_db is None:
-        args.gmap_db = realpath(GMAP_DB)
+        args.gmap_db = realpath(C.GMAP_DB)
         log.warning("Reset GMAP DB to %s", args.gmap_db)
 
     if args.hg_gmap_name is None:
@@ -420,6 +465,7 @@ def get_parser():
     return parser
 
 def main(args=sys.argv[1:]):
+    """main"""
     run(get_parser().parse_args(args))
 
 if __name__ == "__main__":
