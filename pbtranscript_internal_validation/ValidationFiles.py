@@ -31,8 +31,10 @@ def make_readlength_csv(fasta_fn, csv_fn):
 
 
 def make_polymerase_readlength_csv(subreads_xml, csv_fn):
-    """Use position of the last base in subreads to approximate
-    polymerase read lengths, and write them to csv"""
+    """Use HQ region length to approximate polymerase read lengths, and write them to csv
+    John Nguyen: Polymerase RL is essentially HQ region length, and HQ region length
+                 is a good proxy for polymerase readlength.
+    """
     try:
         from pbcore.io import SubreadSet
         # Assuming all reads from one zmw are grouped
@@ -40,14 +42,16 @@ def make_polymerase_readlength_csv(subreads_xml, csv_fn):
         # dict: movie id --> movie name
         movie_id_to_name = {movie_id:movie_name for movie_name, movie_id in ds.movieIds.iteritems()}
 
+        starts = defaultdict(lambda: 99999)
         ends = defaultdict(lambda: 0)
-        for movie_id, zmw, end in zip(ds.index['qId'], ds.index['holeNumber'], ds.index['qEnd']):
+        for movie_id, zmw, start, end in zip(ds.index['qId'], ds.index['holeNumber'], ds.index['qStart'], ds.index['qEnd']):
+            starts[(movie_id, zmw)] = min(starts,  starts[(movie_id, zmw)])
             ends[(movie_id, zmw)] = max(end,  ends[(movie_id, zmw)])
 
         writer = open(csv_fn, 'w')
         writer.write("'name'\t'readlength'\n")
         for movie_id, zmw in sorted(ends.keys()):
-            writer.write("%s/%s\t%s\n" % (movie_id_to_name[movie_id], zmw, ends[(movie_id, zmw)]))
+            writer.write("%s/%s\t%s\n" % (movie_id_to_name[movie_id], zmw, ends[(movie_id, zmw)]-starts[(movie_id, zmw)]))
         writer.close()
     except Exception as e:
         log.warning("Could not obtain polymerase read length! %s", str(e))
