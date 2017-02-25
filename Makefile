@@ -17,9 +17,12 @@ develop:
 
 test:
 	# Unit tests
-	find tests/unit -name "*.py" | xargs nosetests
+	find tests/unit -name "*.py" |grep -v test_validate_nti.py | xargs nosetests
 	# End-to-end tests
 	#find tests/cram -name "*.t" | xargs cram
+
+slowtest:
+	nosetests -s tests/unit/test_validate_nti.py
 
 doc:
 	sphinx-apidoc -T -f -o doc src/ && cd doc && make html

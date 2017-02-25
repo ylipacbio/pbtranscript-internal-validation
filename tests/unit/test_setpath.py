@@ -14,7 +14,8 @@ def _get_smrtlink_isoseq_jobs():
     nosecfg.readfp(open(NOSE_CFG), 'r')
     if nosecfg.has_section('smrtlink_isoseq_jobs'):
         nti = path.abspath(nosecfg.get('smrtlink_isoseq_jobs', 'NTI'))
-        return {'NTI': nti}
+        rc0 = path.abspath(nosecfg.get('smrtlink_isoseq_jobs', 'RC0'))
+        return {'NTI': nti, 'RC0': rc0}
     else:
         msg = "Unable to find section [smrtlink_isoseq_jobs] option [NTI] in {f}".format(f=NOSE_CFG)
         raise KeyError(msg)
