@@ -15,7 +15,7 @@ from pbtranscript_internal_validation.validate_smrtlink_isoseq_rc0 import main
 from test_setpath import smrtlink_isoseq_jobs, OUT_DIR
 
 
-def test_validate_smrtlink_isoseq_rc0_slow():
+def test_validate_nti():
     """Test calling validate_smrtlink_isoseq_rc0.py from command line"""
     print smrtlink_isoseq_jobs
     nti_dir = smrtlink_isoseq_jobs['NTI']
@@ -24,11 +24,10 @@ def test_validate_smrtlink_isoseq_rc0_slow():
     mkdir(eval_dir)
 
     # identical to "validate_smrtlink_isoseq_rc0.py %s %s" % (nti_dir, eval_dir)
-
     main(args=[nti_dir, eval_dir, '--human_only'])
 
     runner = ValidationRunner(eval_dir, nti_dir)
-    for desc, fn in runner.common_files + runner.sirv_files:
+    for desc, fn in runner.common_files + runner.human_files:
         if not op.exists(fn):
             print 'File %s does not exist' % fn
-            assert False
+            assert 'File %s does not exist' % fn == False

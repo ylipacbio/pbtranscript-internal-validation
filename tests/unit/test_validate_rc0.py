@@ -29,5 +29,4 @@ def test_validate_smrtlink_isoseq_rc0():
     for desc, fn in runner.all_files:
         if not op.exists(fn):
             print 'File %s does not exist' % fn
-            assert False
-
+            assert 'File %s does not exist' % fn == False
