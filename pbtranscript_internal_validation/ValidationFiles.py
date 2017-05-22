@@ -192,6 +192,22 @@ class ValidationFiles(object):
         return op.join(self.fasta_dir, "hq_isoforms.fasta")
 
     @property
+    def reseq_to_sirv_dir(self):
+        return op.join(self.root_dir, 'reseq_to_sirv')
+
+    @property
+    def hq_sirv_m4(self):
+        return op.join(self.reseq_to_sirv_dir, "hq_isoforms.sirv.m4")
+
+    @property
+    def lq_sirv_m4(self):
+        return op.join(self.reseq_to_sirv_dir, "lq_isoforms.sirv.m4")
+
+    @property
+    def isoseq_flnc_sirv_m4(self):
+        return op.join(self.reseq_to_sirv_dir, "isoseq_flnc.sirv.m4")
+
+    @property
     def hq_isoforms_fq(self):
         """file path to hq isoforms.fastq"""
         return op.join(self.fasta_dir, "hq_isoforms.fastq")
@@ -360,6 +376,7 @@ class ValidationRunner(ValidationFiles):
         mkdir(self.fasta_dir)
         mkdir(self.csv_dir)
         mkdir(self.chain_sample_dir)
+        mkdir(self.reseq_to_sirv_dir)
 
         smrtlink_job_dir = self.smrtlink_job_dir
         self.make_reports_from_SMRTLink_job(smrtlink_job_dir)
