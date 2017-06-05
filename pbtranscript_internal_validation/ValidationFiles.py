@@ -4,6 +4,8 @@
 
 import logging
 import os.path as op
+import shutil
+import json
 from collections import defaultdict
 from pbcore.io import ContigSet, FastaReader, FastqReader
 from pbtranscript.io import ContigSetReaderWrapper
@@ -25,7 +27,7 @@ def make_readlength_csv(fasta_fn, csv_fn):
     rmpath(csv_fn)
     with open(csv_fn, 'w') as writer:
         writer.write("'name'\t'readlength'\n")
-        cls = FastaReader if fasta_fn.endswith('.fasta.gz') else ContigSetReaderWrapper
+        cls = FastaReader if (fasta_fn.endswith('.gz') or fasta_fn.endswith('.fasta')) else ContigSetReaderWrapper
         for read in cls(fasta_fn):
             writer.write('%s\t%s\n' % (read.name.split()[0], len(read.sequence)))
 
@@ -166,10 +168,9 @@ class ValidationFiles(object):
         return op.join(self.csv_dir, "collapsed_isoforms_readlength.csv")
 
     @property
-    def ccs_fa_gz(self):
-        """file path to concatenated ccs.fasta.gz, no need to
-        decompress gz because pbcore.io.FastaReader can read gz files."""
-        return op.join(self.fasta_dir, "ccs.fasta.gz")
+    def ccs_fa(self):
+        """file path to concatenated ccs.fasta"""
+        return op.join(self.fasta_dir, "ccs.fasta")
 
     @property
     def isoseq_flnc_fa(self):
@@ -190,6 +191,22 @@ class ValidationFiles(object):
     def hq_isoforms_fa(self):
         """file path to hq isoforms.fasta"""
         return op.join(self.fasta_dir, "hq_isoforms.fasta")
+
+    @property
+    def reseq_to_sirv_dir(self):
+        return op.join(self.root_dir, 'reseq_to_sirv')
+
+    @property
+    def hq_sirv_m4(self):
+        return op.join(self.reseq_to_sirv_dir, "hq_isoforms.sirv.m4")
+
+    @property
+    def lq_sirv_m4(self):
+        return op.join(self.reseq_to_sirv_dir, "lq_isoforms.sirv.m4")
+
+    @property
+    def isoseq_flnc_sirv_m4(self):
+        return op.join(self.reseq_to_sirv_dir, "isoseq_flnc.sirv.m4")
 
     @property
     def hq_isoforms_fq(self):
@@ -291,7 +308,13 @@ class ValidationRunner(ValidationFiles):
     def __init__(self, root_dir, smrtlink_job_dir):
         super(ValidationRunner, self).__init__(root_dir=root_dir)
         self.smrtlink_job_dir = op.join(smrtlink_job_dir)
-        self.subreads_xml = SMRTLinkIsoSeqFiles(self.smrtlink_job_dir).subreads_xml
+        self.subreads_xml = self._get_subreads_xml()
+
+    def _get_subreads_xml(self):
+        """return subreadset xml"""
+        datastore_json_fn = op.join(self.smrtlink_job_dir, 'workflow', 'datastore.json')
+        d = {r['fileTypeId']: r['path'] for r in json.load(open(datastore_json_fn, 'r'))['files']}
+        return str(d['PacBio.DataSet.SubreadSet'])
 
     @property
     def all_files(self):
@@ -360,6 +383,7 @@ class ValidationRunner(ValidationFiles):
         mkdir(self.fasta_dir)
         mkdir(self.csv_dir)
         mkdir(self.chain_sample_dir)
+        mkdir(self.reseq_to_sirv_dir)
 
         smrtlink_job_dir = self.smrtlink_job_dir
         self.make_reports_from_SMRTLink_job(smrtlink_job_dir)
@@ -372,7 +396,7 @@ class ValidationRunner(ValidationFiles):
         """Make all read length csv files."""
         log.info("make all readlength csv files.")
         z = [
-            (self.ccs_fa_gz, self.ccs_readlength_csv),
+            (self.ccs_fa, self.ccs_readlength_csv),
             (self.isoseq_flnc_fa, self.flnc_readlength_csv),
             (self.isoseq_nfl_fa, self.nfl_readlength_csv),
             (self.hq_isoforms_fa, self.hq_readlength_csv),
@@ -438,7 +462,14 @@ class ValidationRunner(ValidationFiles):
         ln(src=sl_job.lq_isoforms_fa, dst=self.lq_isoforms_fa)
         ln(src=sl_job.lq_isoforms_fq, dst=self.lq_isoforms_fq)
 
-        ln(src=sl_job.ccs_fa_gz, dst=self.ccs_fa_gz)
+        src_ccs_fa = op.join(op.dirname(sl_job.ccs_fa_gz), 'ccs.fasta')
+        if op.exists(src_ccs_fa):
+            ln(src=src_ccs_fa, dst=self.ccs_fa)
+        elif op.exists(sl_job.ccs_fa_gz):
+            dst_ccs_gz = op.join(op.dirname(self.ccs_fa), 'ccs.fasta.gz')
+            execute('cp %s %s && gunzip %s' % (sl_job.ccs_fa_gz, dst_ccs_gz, dst_ccs_gz))
+        else:
+            raise IOError("Could neither find %s or %s" % (src_ccs_fa, sl_job.ccs_fa.gz))
 
     def make_reports_from_SMRTLink_job(self, smrtlink_job_dir):
         """Get reports from a SMRTLink job, including ccs report,

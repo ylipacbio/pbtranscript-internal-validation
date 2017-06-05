@@ -20,12 +20,12 @@ from pbtranscript.RunnerUtils import sge_job_runner
 from pbtranscript.ClusterOptions import SgeOptions
 from pbtranscript.collapsing import concatenate_sam, sort_sam
 from pbtranscript.Utils import execute, realpath, mkdir, rmpath
-from pbtranscript.io import ChainConfig, ContigSetReaderWrapper, SMRTLinkIsoSeqFiles
+from pbtranscript.io import ChainConfig, ContigSetReaderWrapper, SMRTLinkIsoSeqFiles, BLASRM4Reader
 from pbtranscript.tasks.post_mapping_to_genome import add_post_mapping_to_genome_arguments, \
                 post_mapping_to_genome_runner
 from pbtranscript.counting.chain_samples import chain_samples
-from pbtranscript_internal_validation import ValidationFiles, ValidationRunner
-from pbtranscript_internal_validation import ValidationConstants as C
+from . import ValidationFiles, ValidationRunner
+from . import ValidationConstants as C
 #from pbtranscript.collapsing.CollapsingUtils import map_isoforms_and_sort
 
 
@@ -92,6 +92,18 @@ def sge_map_isoform_to_genome(fq_fn, gmap_db, gmap_name, o_sam_fn, nchunks, work
     o_sam_fns = sge_gmap_cmds(o_fq_fns, gmap_db, gmap_name, gmap_nproc, sge_queue)
     gather_sam(i_sam_fns=o_sam_fns, o_sam_fn=o_sam_fn)
 
+
+def reseq(fa_fn, ref_fn, out_m4, nproc=16):
+    """Resequencing, output m4"""
+    cmd = 'blasr %s %s --out %s --bestn 1 --nCandidates 5 --nproc %s -m 4 --header ' % (fa_fn, ref_fn, out_m4, nproc)
+    execute(cmd)
+
+def summarize_reseq(m4_fn):
+    """Summarize resequencing m4 output, return (num_mapped_reads, num_mapped_reference)"""
+    records = [r for r in BLASRM4Reader(m4_fn)]
+    n_mapped_reads = len(records)
+    n_mapped_refs = len(set([r.sID for r in records]))
+    return (n_mapped_reads, n_mapped_refs)
 
 def collapse_to_reference(hq_fq, gmap_db, gmap_name, hq_lq_prefix_pickle,
                           out_dir, args, out_rep_fq, out_rep_sam,
@@ -375,19 +387,31 @@ def validate_sirv_isoforms(args):
     n_total, n_fn, n_fp = compare_with_sirv(chained_ids_fn=vfs.chained_ids_txt,
                                             sirv_name=C.SIRV_NAME, sample_name=args.sample_name)
 
+    report = [('TP', n_total), ('FN', n_fn), ('FP', n_fp)]
     with open(vfs.sirv_report_txt, 'w') as f:
-        f.write("TP: {0}\n".format(n_total))
-        f.write("FN: {0}\n".format(n_fn))
-        f.write("FP: {0}\n".format(n_fp))
+        for k, v in report:
+            f.write("%s: %s\n" % (k, v))
 
     # append more sirv validation metrics to report csv
-    with open(vfs.validation_report_csv, 'a') as f:
-        desc_val_tuples = [
+    desc_val_tuples = [
             ("collapse_to_sirv.num_isoforms", _get_num_reads(vfs.collapsed_to_sirv_rep_fq)),
             ("collapse_to_sirv.num_TruePositive", n_total),
             ("collapse_to_sirv.num_FalseNegative", n_fn),
             ("collapse_to_sirv.num_FalsePositive", n_fp)
-        ]
+    ]
+
+    # Reseq FLNC/HQ/LQ isoforms to SIRV transcripts
+    d = {'reseq_to_sirv.hq_isoforms': (vfs.hq_isoforms_fa, vfs.hq_sirv_m4),
+         'reseq_to_sirv.lq_isoforms': (vfs.lq_isoforms_fa, vfs.lq_sirv_m4),
+         'reseq_to_sirv.isoseq_flnc': (vfs.isoseq_flnc_fa, vfs.isoseq_flnc_sirv_m4)}
+    for name in d.keys():
+        fa_fn, m4_fn = d[name][0], d[name][1]
+        reseq(fa_fn, args.sirv_transcripts_fa, m4_fn)
+        n_mapped_reads, n_mapped_refs = summarize_reseq(m4_fn)
+        desc_val_tuples.append(('%s_n_mapped_reads' % name, n_mapped_reads))
+        desc_val_tuples.append(('%s_n_mapped_refs' % name, n_mapped_refs))
+
+    with open(vfs.validation_report_csv, 'a') as f:
         for desc, val in desc_val_tuples:
             f.write("%s\t%s\n" % (desc, val))
 
@@ -411,6 +435,12 @@ def compare_with_sirv(chained_ids_fn, sirv_name, sample_name):
 
     return len(tally), len(FNs), len(FPs)
 
+def add_reseq_arguments(parser):
+    """Resequencing HQ/LQ isoforms against SIRV and Gencode transcripts"""
+    reseq_group = parser.add_argument_group("Resequencing arguments")
+    reseq_group.add_argument("--sirv_transcripts_fa", type=str, default=C.SIRV_TRANSCRIPTS_FA, help="SIRV reference transcripts FASTA")
+    reseq_group.add_argument("--hg_transcripts_fa", type=str, default=C.HUMAN_TRANSCRIPTS_FA, help="Human reference transcripts FASTA")
+    return parser
 
 def add_gmap_arguments(parser):
     """Get gmap parser"""
@@ -452,8 +482,8 @@ def get_parser():
 
     parser = add_post_mapping_to_genome_arguments(parser)
     parser = add_gmap_arguments(parser)
+    parser = add_reseq_arguments(parser)
     parser = add_sge_arguments(parser)
-
 
     helpstr = "Gencode gtf file containing known human transcripts. default %r" % C.GENCODE_GTF
     parser.add_argument("--gencode_gtf", type=str, default=C.GENCODE_GTF, help=helpstr)
