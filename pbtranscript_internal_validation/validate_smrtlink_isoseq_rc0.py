@@ -24,8 +24,8 @@ from pbtranscript.io import ChainConfig, ContigSetReaderWrapper, SMRTLinkIsoSeqF
 from pbtranscript.tasks.post_mapping_to_genome import add_post_mapping_to_genome_arguments, \
                 post_mapping_to_genome_runner
 from pbtranscript.counting.chain_samples import chain_samples
-from pbtranscript_internal_validation import ValidationFiles, ValidationRunner
-from pbtranscript_internal_validation import ValidationConstants as C
+from . import ValidationFiles, ValidationRunner
+from . import ValidationConstants as C
 #from pbtranscript.collapsing.CollapsingUtils import map_isoforms_and_sort
 
 

@@ -5,6 +5,7 @@
 import logging
 import os.path as op
 import shutil
+import json
 from collections import defaultdict
 from pbcore.io import ContigSet, FastaReader, FastqReader
 from pbtranscript.io import ContigSetReaderWrapper
@@ -307,7 +308,13 @@ class ValidationRunner(ValidationFiles):
     def __init__(self, root_dir, smrtlink_job_dir):
         super(ValidationRunner, self).__init__(root_dir=root_dir)
         self.smrtlink_job_dir = op.join(smrtlink_job_dir)
-        self.subreads_xml = SMRTLinkIsoSeqFiles(self.smrtlink_job_dir).subreads_xml
+        self.subreads_xml = self._get_subreads_xml()
+
+    def _get_subreads_xml(self):
+        """return subreadset xml"""
+        datastore_json_fn = op.join(self.smrtlink_job_dir, 'workflow', 'datastore.json')
+        d = {r['fileTypeId']: r['path'] for r in json.load(open(datastore_json_fn, 'r'))['files']}
+        return str(d['PacBio.DataSet.SubreadSet'])
 
     @property
     def all_files(self):
@@ -455,7 +462,14 @@ class ValidationRunner(ValidationFiles):
         ln(src=sl_job.lq_isoforms_fa, dst=self.lq_isoforms_fa)
         ln(src=sl_job.lq_isoforms_fq, dst=self.lq_isoforms_fq)
 
-        ln(src=op.join(op.dirname(sl_job.ccs_fa_gz), 'ccs.fasta'), dst=self.ccs_fa)
+        src_ccs_fa = op.join(op.dirname(sl_job.ccs_fa_gz), 'ccs.fasta')
+        if op.exists(src_ccs_fa):
+            ln(src=src_ccs_fa, dst=self.ccs_fa)
+        elif op.exists(sl_job.ccs_fa_gz):
+            dst_ccs_gz = op.join(op.dirname(self.ccs_fa), 'ccs.fasta.gz')
+            execute('cp %s %s && gunzip %s' % (sl_job.ccs_fa_gz, dst_ccs_gz, dst_ccs_gz))
+        else:
+            raise IOError("Could neither find %s or %s" % (src_ccs_fa, sl_job.ccs_fa.gz))
 
     def make_reports_from_SMRTLink_job(self, smrtlink_job_dir):
         """Get reports from a SMRTLink job, including ccs report,
