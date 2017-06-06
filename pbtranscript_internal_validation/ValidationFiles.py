@@ -296,7 +296,7 @@ class ValidationFiles(object):
     @property
     def collapsed_to_sirv_rep_readlength_csv(self):
         """readlength csv of representative isoforms collapsed to hg"""
-        return op.join(self.csv_dir, "collapsed_to_hg_rep_readlength.csv")
+        return op.join(self.csv_dir, "collapsed_to_sirv_rep_readlength.csv")
 
     def __str__(self):
         return "IsoSeq validation files under: %s" % self.root_dir
