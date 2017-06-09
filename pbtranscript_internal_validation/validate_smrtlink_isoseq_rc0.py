@@ -26,7 +26,7 @@ from pbtranscript.tasks.post_mapping_to_genome import add_post_mapping_to_genome
 from pbtranscript.counting.chain_samples import chain_samples
 from . import ValidationFiles, ValidationRunner
 from . import ValidationConstants as C
-#from pbtranscript.collapsing.CollapsingUtils import map_isoforms_and_sort
+from pbtranscript.collapsing.CollapsingUtils import map_isoforms_and_sort
 
 
 __author__ = 'etseng@pacb.com, yli@pacb.com'
@@ -63,7 +63,7 @@ def sge_gmap_cmds(fq_fns, gmap_db, gmap_name, gmap_nproc, sge_queue):
 
     def cmd(fq_fn, sam_fn):
         """return a cmd string which maps fq_fn to gmap_db/gmap_name and outputs to sam_fn"""
-        return "map_isoforms_to_genome.py %s %s --gmap_name %s --gmap_db %s --gmap_nproc %s" % (fq_fn, sam_fn, gmap_name, gmap_db, gmap_nproc)
+        return "python -m pbtranscript.tasks.map_isoforms_to_genome %s %s --gmap_name %s --gmap_db %s --gmap_nproc %s" % (fq_fn, sam_fn, gmap_name, gmap_db, gmap_nproc)
     cmds = [cmd(fq_fn, sam_fn) for fq_fn, sam_fn in zip(fq_fns, sam_fns)]
     sge_job_runner(cmds_list=cmds, script_files=script_fns, num_threads_per_job=gmap_nproc,
                    sge_opts=SgeOptions(random.randint(0, 100000), sge_queue=sge_queue),
@@ -88,7 +88,7 @@ def sge_map_isoform_to_genome(fq_fn, gmap_db, gmap_name, o_sam_fn, nchunks, work
     into nchunks, run scattered tasks on sge, and gather alignments to o_sam_fn
     """
     o_fq_fns = scatter_fastq(fq_fn, nchunks, work_dir)
-    print o_fq_fns
+    log.info("Scatter %s to %s.", fq_fn, o_fq_fns)
     o_sam_fns = sge_gmap_cmds(o_fq_fns, gmap_db, gmap_name, gmap_nproc, sge_queue)
     gather_sam(i_sam_fns=o_sam_fns, o_sam_fn=o_sam_fn)
 
@@ -124,12 +124,14 @@ def collapse_to_reference(hq_fq, gmap_db, gmap_name, hq_lq_prefix_pickle,
     mkdir(out_dir)
     hq_sam = op.join(out_dir, "%s.sorted.sam" % op.basename(hq_fq))
     # GMAP jobs are very slow, decide to run GMAP jobs on SGE instead
-    #map_isoforms_and_sort(input_filename=hq_fq, sam_filename=hq_sam,
-    #                      gmap_db_dir=gmap_db, gmap_db_name=gmap_name, gmap_nproc=C.GMAP_NPROC)
-    sge_map_isoform_to_genome(fq_fn=hq_fq, gmap_db=gmap_db, gmap_name=gmap_name,
-                              o_sam_fn=hq_sam, nchunks=args.sge_nodes,
-                              work_dir=op.join(out_dir, 'sge_map_hq_to_genome'),
-                              gmap_nproc=C.GMAP_NPROC, sge_queue=args.sge_queue)
+    if not args.use_sge:
+        map_isoforms_and_sort(input_filename=hq_fq, sam_filename=hq_sam,
+                              gmap_db_dir=gmap_db, gmap_db_name=gmap_name, gmap_nproc=C.GMAP_NPROC)
+    else:
+        sge_map_isoform_to_genome(fq_fn=hq_fq, gmap_db=gmap_db, gmap_name=gmap_name,
+                                  o_sam_fn=hq_sam, nchunks=args.sge_nodes,
+                                  work_dir=op.join(out_dir, 'sge_map_hq_to_genome'),
+                                  gmap_nproc=C.GMAP_NPROC, sge_queue=args.sge_queue)
 
     log.info("Collapsing and filtering HQ isoforms to create representative isoforms.")
     # Post mapping to genome analysis, including
@@ -152,12 +154,14 @@ def collapse_to_reference(hq_fq, gmap_db, gmap_name, hq_lq_prefix_pickle,
 
     # Map representitive isoforms to reference
     log.info("Mapping representative isoforms %s to reference %s/%s", out_rep_fq, gmap_db, gmap_name)
-    #map_isoforms_and_sort(input_filename=out_rep_fq, sam_filename=out_rep_sam,
-    #                      gmap_db_dir=gmap_db, gmap_db_name=gmap_name, gmap_nproc=C.GMAP_NPROC)
-    sge_map_isoform_to_genome(fq_fn=out_rep_fq, gmap_db=gmap_db, gmap_name=gmap_name,
-                              o_sam_fn=out_rep_sam, nchunks=args.sge_nodes,
-                              work_dir=op.join(out_dir, 'sge_map_rep_to_genome'),
-                              gmap_nproc=C.GMAP_NPROC, sge_queue=args.sge_queue)
+    if not args.use_sge:
+        map_isoforms_and_sort(input_filename=out_rep_fq, sam_filename=out_rep_sam,
+                              gmap_db_dir=gmap_db, gmap_db_name=gmap_name, gmap_nproc=C.GMAP_NPROC)
+    else:
+        sge_map_isoform_to_genome(fq_fn=out_rep_fq, gmap_db=gmap_db, gmap_name=gmap_name,
+                                  o_sam_fn=out_rep_sam, nchunks=args.sge_nodes,
+                                  work_dir=op.join(out_dir, 'sge_map_rep_to_genome'),
+                                  gmap_nproc=C.GMAP_NPROC, sge_queue=args.sge_queue)
     return out_rep_fq, out_rep_sam
 
 
@@ -458,6 +462,7 @@ def add_gmap_arguments(parser):
 def add_sge_arguments(parser):
     """Get sge parser"""
     sge_group = parser.add_argument_group("SGE arguments")
+    sge_group.add_argument("--use_sge", default=False, action='store_true', help="Submit jobs to SGE")
     sge_group.add_argument("--sge_queue", type=str, default='default',
                            help="SGE queue to submit GMAP jobs, e.g., 'default', 'production'")
     sge_group.add_argument("--sge_nodes", type=int, default=12,
