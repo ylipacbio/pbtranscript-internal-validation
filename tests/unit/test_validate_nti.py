@@ -24,10 +24,10 @@ def test_validate_nti():
     mkdir(eval_dir)
 
     # identical to "validate_smrtlink_isoseq_rc0.py %s %s" % (nti_dir, eval_dir)
-    main(args=[nti_dir, eval_dir, '--human_only'])
+    main(args=[nti_dir, eval_dir, '--collapse_to_human', '--reseq_to_human', '--make_readlength'])
 
     runner = ValidationRunner(eval_dir, nti_dir)
-    for desc, fn in runner.common_files + runner.human_files:
+    for desc, fn in runner.common_files + runner.collapse_human_files + runner.reseq_human_files:
         if not op.exists(fn):
             print 'File %s does not exist' % fn
             assert 'File %s does not exist' % fn == False

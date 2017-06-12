@@ -15,6 +15,7 @@ from csv import DictReader
 from pbcommand.pb_io.common import load_pipeline_chunks_from_json
 import pbcoretools.chunking.chunk_utils as CH
 from pbcoretools.chunking.gather import get_datum_from_chunks_by_chunk_key
+from pbcore.io import FastaReader
 
 from pbtranscript.RunnerUtils import sge_job_runner
 from pbtranscript.ClusterOptions import SgeOptions
@@ -26,6 +27,7 @@ from pbtranscript.tasks.post_mapping_to_genome import add_post_mapping_to_genome
 from pbtranscript.counting.chain_samples import chain_samples
 from . import ValidationFiles, ValidationRunner
 from . import ValidationConstants as C
+from .Utils import reseq
 from pbtranscript.collapsing.CollapsingUtils import map_isoforms_and_sort
 
 
@@ -91,12 +93,6 @@ def sge_map_isoform_to_genome(fq_fn, gmap_db, gmap_name, o_sam_fn, nchunks, work
     log.info("Scatter %s to %s.", fq_fn, o_fq_fns)
     o_sam_fns = sge_gmap_cmds(o_fq_fns, gmap_db, gmap_name, gmap_nproc, sge_queue)
     gather_sam(i_sam_fns=o_sam_fns, o_sam_fn=o_sam_fn)
-
-
-def reseq(fa_fn, ref_fn, out_m4, nproc=16):
-    """Resequencing, output m4"""
-    cmd = 'blasr %s %s --out %s --bestn 1 --nCandidates 5 --nproc %s -m 4 --header ' % (fa_fn, ref_fn, out_m4, nproc)
-    execute(cmd)
 
 def summarize_reseq(m4_fn):
     """Summarize resequencing m4 output, return (num_mapped_reads, num_mapped_reference)"""
@@ -288,23 +284,27 @@ def run(args):
 
     # make data files and reports to validation dir
     log.info("Making links of smrtlink isoseq outputs")
-    runner.make_all_files_from_SMRTLink_job()
+    runner.make_all_files_from_SMRTLink_job(make_readlength=args.make_readlength)
 
     # for human isoforms
-    if not args.sirv_only:
+    if args.collapse_to_human:
         runner.ln_gencode_gtf(args.gencode_gtf)
         validate_human_isoforms(args)
         runner.make_readlength_csv_for_hg_isoforms()
 
+    if args.reseq_to_human:
+        log.info("Reseq to human transcripts.")
+        runner.reseq_to_human(target_fa=args.hg_transcripts_fa, selected_transcripts=args.selected_hg_transcripts.split(','))
+
     # for sirv isoforms
-    if not args.human_only:
+    if not args.no_sirv:
         runner.ln_sirv_truth_dir(args.sirv_truth_dir)
         validate_sirv_isoforms(args)
         runner.make_readlength_csv_for_sirv_isoforms()
 
     # write args and  data files to README
     log.info("Writing args and data files to %s", runner.readme_txt)
-    runner.make_readme_txt(args=args, human_only=args.human_only, sirv_only=args.sirv_only)
+    runner.make_readme_txt(args=args, collapse_to_human=args.collapse_to_human, reseq_to_human=args.reseq_to_human, no_sirv=args.no_sirv)
 
 
 def validate_human_isoforms(args):
@@ -323,33 +323,35 @@ def validate_human_isoforms(args):
         out_gff=vfs.collapsed_to_hg_gff, out_abundance=vfs.collapsed_to_hg_abundance,
         out_group=vfs.collapsed_to_hg_group, args=args)
 
-    # Run matchAnnot.py to compare sorted_rep_sam against gencode gtf.
-    log.info("Running matchAnnot.py")
-    validate_with_Gencode(sorted_rep_sam=sorted_rep_sam, gencode_gtf=args.gencode_gtf,
-                          match_out=vfs.matchAnnot_out)
+    try:
+        # Run matchAnnot.py to compare sorted_rep_sam against gencode gtf.
+        log.info("Running matchAnnot.py")
+        validate_with_Gencode(sorted_rep_sam=sorted_rep_sam, gencode_gtf=args.gencode_gtf,
+                              match_out=vfs.matchAnnot_out)
 
-    # Check from matchAnnot.txt % of isoforms with scores 4 or 5
-    log.info("Reading matchAnnot reports")
-    total_n, ns = check_matchAnnot_out(match_out=vfs.matchAnnot_out)
+        # Check from matchAnnot.txt % of isoforms with scores 4 or 5
+        log.info("Reading matchAnnot reports")
+        total_n, ns = check_matchAnnot_out(match_out=vfs.matchAnnot_out)
 
-    # collpased isoforms with HIGH matchAnnot score (4 or 5) ? min_percentage
-    # ok = (ns[5] + ns[4] >= total_n * min_percentage / 100.0)
-    msg = "%s out of %s collapsed isoforms have HIGH MatchAnnot score (>=4)" % (ns[5]+ns[4], total_n)
-    log.info(msg)
+        # collpased isoforms with HIGH matchAnnot score (4 or 5) ? min_percentage
+        # ok = (ns[5] + ns[4] >= total_n * min_percentage / 100.0)
+        msg = "%s out of %s collapsed isoforms have HIGH MatchAnnot score (>=4)" % (ns[5]+ns[4], total_n)
+        log.info(msg)
 
-    # write human related validation metrics to report csv
-    writer = open(vfs.hg_report_txt, 'w')
-    csv_writer = open(vfs.validation_report_csv, 'a')
-    writer.write(msg + "\n\nDetails:\n")
-    csv_writer.write("%s\t%s\n" % ("collapse_to_human.num_isoforms", _get_num_reads(vfs.collapsed_to_hg_rep_fq)))
-    csv_writer.write("%s\t%s\n" % ("collapse_to_human.num_isoforms_score_ge_4", ns[4] + ns[5]))
-    csv_writer.write("%s\t%s\n" % ("collapse_to_human.percentage_isoforms_score_ge_4", (ns[4] + ns[5])/(1.*total_n)))
-    for score in range(0, 6):
-        writer.write("%s out of %s collapsed isoforms with MatchAnnot score %s\n" % (ns[score], total_n, score))
-        csv_writer.write("%s\t%s\n" % ("collapse_to_human.num_isoforms_score_eq_%s" % score, ns[score]))
-    writer.close()
-    csv_writer.close()
-
+        # write human related validation metrics to report csv
+        writer = open(vfs.hg_report_txt, 'w')
+        csv_writer = open(vfs.validation_report_csv, 'a')
+        writer.write(msg + "\n\nDetails:\n")
+        csv_writer.write("%s\t%s\n" % ("collapse_to_human.num_isoforms", _get_num_reads(vfs.collapsed_to_hg_rep_fq)))
+        csv_writer.write("%s\t%s\n" % ("collapse_to_human.num_isoforms_score_ge_4", ns[4] + ns[5]))
+        csv_writer.write("%s\t%s\n" % ("collapse_to_human.percentage_isoforms_score_ge_4", (ns[4] + ns[5])/(1.*total_n)))
+        for score in range(0, 6):
+            writer.write("%s out of %s collapsed isoforms with MatchAnnot score %s\n" % (ns[score], total_n, score))
+            csv_writer.write("%s\t%s\n" % ("collapse_to_human.num_isoforms_score_eq_%s" % score, ns[score]))
+        writer.close()
+        csv_writer.close()
+    except Exception as e:
+        log.warning("Could not validate with matchanot!")
 
 def validate_sirv_isoforms(args):
     """Collapse HQ isoforms to SIRV, get collapsed isoforms in fq and SAM.
@@ -444,6 +446,9 @@ def add_reseq_arguments(parser):
     reseq_group = parser.add_argument_group("Resequencing arguments")
     reseq_group.add_argument("--sirv_transcripts_fa", type=str, default=C.SIRV_TRANSCRIPTS_FA, help="SIRV reference transcripts FASTA")
     reseq_group.add_argument("--hg_transcripts_fa", type=str, default=C.HUMAN_TRANSCRIPTS_FA, help="Human reference transcripts FASTA")
+    def get_read_names(fa):
+        return ','.join([r.name.split()[0] for r in FastaReader(fa)])
+    reseq_group.add_argument("--selected_hg_transcripts", type=str, default=get_read_names(C.HUMAN_12_TRANSCRIPTS_FA), help="comma delimited human transcripts to analyze")
     return parser
 
 def add_gmap_arguments(parser):
@@ -473,7 +478,7 @@ def add_sge_arguments(parser):
 def get_parser():
     """Get argument parser."""
     helpstr = "Validate an SMRTLink Iso-Seq job of RC0 sample by comparing with Human GenCode Annotation and SIRV ground truth"
-    parser = argparse.ArgumentParser(helpstr)
+    parser = argparse.ArgumentParser(helpstr, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     helpstr = "Smrtlink Iso-Seq job directory"
     parser.add_argument("smrtlink_job_dir", help=helpstr)
@@ -481,9 +486,10 @@ def get_parser():
     helpstr = "Validation out directory"
     parser.add_argument("val_dir", help=helpstr)
 
-    me_group = parser.add_mutually_exclusive_group()
-    me_group.add_argument('--human_only', action='store_true', help="Only validate against human transcripts.")
-    me_group.add_argument('--sirv_only', action='store_true', help="Only validate against SIRV.")
+    parser.add_argument('--no_sirv', default=False, action='store_true', help="Don't compare against SIRV.")
+    parser.add_argument('--make_readlength', default=False, action='store_true', help="Make read length csv.")
+    parser.add_argument('--collapse_to_human', action='store_true', help="Collapse HQ isoforms to human genome. NOTE that it will be SLOW")
+    parser.add_argument('--reseq_to_human', action='store_true', help="Reseq FLNC and HQ isoforms to human transcripts.")
 
     parser = add_post_mapping_to_genome_arguments(parser)
     parser = add_gmap_arguments(parser)

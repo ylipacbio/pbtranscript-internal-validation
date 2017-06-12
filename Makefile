@@ -1,6 +1,9 @@
 SHELL = /bin/bash -e 
 
-all: build install
+all: check build install
+
+check:
+	pylint --errors-only pbtranscript_internal_validation/*.py
 
 build:
 	python setup.py build --executable="/usr/bin/env python"
