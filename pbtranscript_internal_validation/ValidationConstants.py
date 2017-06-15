@@ -23,3 +23,6 @@ class ValidationConstants(object):
     SIRV_TRUTH_DIR = op.join(SIRV_DATA_ROOT_DIR, 'validation')
     SIRV_TRANSCRIPTS_FA = op.join(SIRV_DATA_ROOT_DIR, 'isoforms', 'SIRV_C_150601a.truth.fasta')
     SIRV_GENOME_FA = op.join(SIRV_DATA_ROOT_DIR, 'reference', 'SIRV_150601a.fasta')
+
+    HUMAN_12_TRANSCRIPTS_FA = op.join(SIRV_DATA_ROOT_DIR, 'human', 'RC0_selected_12_human_transcripts.fasta')
+    HUMAN_16_TRANSCRIPTS_FA = op.join(SIRV_DATA_ROOT_DIR, 'human', 'RC0_selected_16_human_transcripts.fasta')

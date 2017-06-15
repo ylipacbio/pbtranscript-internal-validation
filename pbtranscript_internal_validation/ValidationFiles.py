@@ -11,7 +11,8 @@ from pbcore.io import ContigSet, FastaReader, FastqReader
 from pbtranscript.io import ContigSetReaderWrapper
 from pbtranscript.Utils import realpath, rmpath, ln, mkdir, execute
 from pbtranscript.io.SMRTLinkIsoSeqFiles import SMRTLinkIsoSeqFiles
-from .Utils import consolidate_xml, json_to_attr_dict
+from .Utils import (consolidate_xml, json_to_attr_dict, get_subread_xml_from_job_path,
+        reseq, coverage2str, subset_dict, m42coverage)
 
 FORMATTER = op.basename(__file__) + ':%(levelname)s:'+'%(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMATTER)
@@ -284,6 +285,29 @@ class ValidationFiles(object):
         return self.collapsed_to_hg_rep_sam + ".matchAnnot.txt"
 
     @property
+    def reseq_to_hg_dir(self):
+        """Directory saving files resequencing to human transcripts"""
+        return op.join(self.root_dir, "reseq_to_hg")
+
+    @property
+    def hq_reseq_to_hg_m4(self):
+        """Resequence HQ isoforms to human transcripts using blasr, outputs in m4"""
+        return op.join(self.reseq_to_hg_dir, "hq_to_hg.m4")
+
+    @property
+    def hq_reseq_to_hg_selected_transcripts_csv(self):
+        return op.join(self.reseq_to_hg_dir, 'hq_reseq_to_hg_selected_transcripts.csv')
+
+    @property
+    def flnc_reseq_to_hg_m4(self):
+        """Reseq flnc reads to human transcripts using blasr, outputs in m4"""
+        return op.join(self.reseq_to_hg_dir, "flnc_to_hg.m4")
+
+    @property
+    def flnc_reseq_to_hg_selected_transcripts_csv(self):
+        return op.join(self.reseq_to_hg_dir, 'flnc_reseq_to_hg_selected_transcripts.csv')
+
+    @property
     def collapsed_to_sirv_rep_sam(self):
         """sorted alignments mapping isoforms to SIRV"""
         return op.join(self.collapse_to_sirv_dir, "touse.rep.sam")
@@ -308,18 +332,12 @@ class ValidationRunner(ValidationFiles):
     def __init__(self, root_dir, smrtlink_job_dir):
         super(ValidationRunner, self).__init__(root_dir=root_dir)
         self.smrtlink_job_dir = op.join(smrtlink_job_dir)
-        self.subreads_xml = self._get_subreads_xml()
-
-    def _get_subreads_xml(self):
-        """return subreadset xml"""
-        datastore_json_fn = op.join(self.smrtlink_job_dir, 'workflow', 'datastore.json')
-        d = {r['fileTypeId']: r['path'] for r in json.load(open(datastore_json_fn, 'r'))['files']}
-        return str(d['PacBio.DataSet.SubreadSet'])
+        self.subreads_xml = get_subread_xml_from_job_path(self.smrtlink_job_dir)
 
     @property
     def all_files(self):
         """Return a list of all files and dirs as [(file_description, file_path)]"""
-        return self.common_files + self.human_files + self.sirv_files
+        return self.common_files + self.collapse_human_files + self.reseq_human_files + self.sirv_files
 
     @property
     def common_files(self):
@@ -343,7 +361,7 @@ class ValidationRunner(ValidationFiles):
         ]
 
     @property
-    def human_files(self):
+    def collapse_human_files(self):
         """human related files."""
         return [
             ("gencode_gtf", self.gencode_gtf),
@@ -352,6 +370,13 @@ class ValidationRunner(ValidationFiles):
             ("collapsed_to_hg_rep_readlength_csv", self.collapsed_to_hg_rep_readlength_csv),
             ("matchAnnot_out", self.matchAnnot_out)
         ]
+
+    @property
+    def reseq_human_files(self):
+        return [("hq_reseq_to_hg_m4", self.hq_reseq_to_hg_m4),
+                ("flnc_reseq_to_hg_m4", self.flnc_reseq_to_hg_m4),
+                ("hq_reseq_to_hg_selected_transcripts_csv", self.hq_reseq_to_hg_selected_transcripts_csv),
+                ("flnc_reseq_to_hg_selected_transcripts_csv", self.flnc_reseq_to_hg_selected_transcripts_csv)]
 
     @property
     def sirv_files(self):
@@ -373,7 +398,7 @@ class ValidationRunner(ValidationFiles):
         log.info("Making soft link of sirv ground truth dir")
         ln(sirv_truth_dir, self.sirv_truth_dir)
 
-    def make_all_files_from_SMRTLink_job(self):
+    def make_all_files_from_SMRTLink_job(self, make_readlength=True):
         """Make all data files from a smrtlink job, including
         * consolidate flnc and nfl xml files to fasta
         * collect ccs, classify, cluster reports from sl job and make validation_report_csv
@@ -384,6 +409,7 @@ class ValidationRunner(ValidationFiles):
         mkdir(self.csv_dir)
         mkdir(self.chain_sample_dir)
         mkdir(self.reseq_to_sirv_dir)
+        mkdir(self.reseq_to_hg_dir)
 
         smrtlink_job_dir = self.smrtlink_job_dir
         self.make_reports_from_SMRTLink_job(smrtlink_job_dir)
@@ -447,7 +473,6 @@ class ValidationRunner(ValidationFiles):
             # Consolidate isoseq_nfl.fasta
             consolidate_xml(src=sl_job.isoseq_nfl_ds, dst=self.isoseq_nfl_fa)
 
-
     def ln_files_from_SMRTLink_job(self, smrtlink_job_dir):
         """Make soft links to existing isoseq output fasta|fastq files."""
         log.info("make soft links from smrtlink job")
@@ -466,8 +491,9 @@ class ValidationRunner(ValidationFiles):
         if op.exists(src_ccs_fa):
             ln(src=src_ccs_fa, dst=self.ccs_fa)
         elif op.exists(sl_job.ccs_fa_gz):
+            dst_ccs_fa = op.join(op.dirname(self.ccs_fa), 'ccs.fasta')
             dst_ccs_gz = op.join(op.dirname(self.ccs_fa), 'ccs.fasta.gz')
-            execute('cp %s %s && gunzip %s' % (sl_job.ccs_fa_gz, dst_ccs_gz, dst_ccs_gz))
+            execute('rm -f %s && cp %s %s && gunzip %s' % (dst_ccs_fa, sl_job.ccs_fa_gz, dst_ccs_gz, dst_ccs_gz))
         else:
             raise IOError("Could neither find %s or %s" % (src_ccs_fa, sl_job.ccs_fa.gz))
 
@@ -491,18 +517,30 @@ class ValidationRunner(ValidationFiles):
             for key in sorted(d.keys()):#d.iteritems():
                 writer.write("%s\t%s\n" % (key, d[key]))
 
-    def make_readme_txt(self, args, human_only=False, sirv_only=False):
+    def reseq_to_human(self, target_fa, selected_transcripts):
+        """Resequence FLNC and HQ isoforms to human transcripts"""
+        log.info('Locals: %s' % locals())
+        _files = [(self.hq_isoforms_fa, target_fa, self.hq_reseq_to_hg_m4, self.hq_reseq_to_hg_selected_transcripts_csv),
+                  (self.isoseq_flnc_fa, target_fa, self.flnc_reseq_to_hg_m4, self.flnc_reseq_to_hg_selected_transcripts_csv)]
+        for query_fa, target_fa, out_m4, out_csv in _files:
+            reseq(fa_fn=query_fa, ref_fn=target_fa, out_m4=out_m4)
+            with open(out_csv, 'w') as writer:
+                 writer.write(coverage2str(coverage_d=subset_dict(d=m42coverage(out_m4), selected_keys=selected_transcripts)))
+
+    def make_readme_txt(self, args, collapse_to_human=False, reseq_to_human=False, no_sirv=True):
         """Write args and data files to README file."""
         with open(self.readme_txt, 'w') as writer:
             log.info("args=%s\n", args)
             writer.write("# Created by pbtranscript-internal-validation.ValidationRunner.make_readme_txt()\n")
             writer.write("args=%s\n\n" % args)
 
-            files = self.all_files # by default show all files
-            if human_only:
-                files = self.common_files + self.human_files
-            elif sirv_only:
-                files = self.common_files + self.sirv_files
+            files = self.common_files
+            if collapse_to_human:
+                files = files + self.collapse_human_files
+            elif reseq_to_human:
+                files = files + self.reseq_human_files
+            elif not no_sirv:
+                files = files + self.sirv_files
 
             for desc, fn in files:
                 writer.write("%s=%s\n" % (desc, fn))
