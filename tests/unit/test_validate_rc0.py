@@ -16,7 +16,7 @@ from test_setpath import smrtlink_isoseq_jobs, OUT_DIR
 def test_validate_smrtlink_isoseq_rc0():
     """Test calling validate_smrtlink_isoseq_rc0.py from command line"""
     print smrtlink_isoseq_jobs
-    rc0_dir = smrtlink_isoseq_jobs['RC0']
+    rc0_dir = smrtlink_isoseq_jobs['TINY']
     eval_dir = op.join(OUT_DIR, 'test_validate_rc0')
     rmpath(eval_dir)
     mkdir(eval_dir)
