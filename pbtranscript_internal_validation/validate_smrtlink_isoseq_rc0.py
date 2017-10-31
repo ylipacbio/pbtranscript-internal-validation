@@ -275,7 +275,7 @@ def make_sane(args):
     return args
 
 
-def run(args):
+def run(SMRTLinkIsoSeqFilesCls, args):
     """
     Collapse HQ isoforms from SMRTLink Iso-Seq (w/wo genome) job to hg38.
     """
@@ -289,7 +289,7 @@ def run(args):
     # for human isoforms
     if args.collapse_to_human:
         runner.ln_gencode_gtf(args.gencode_gtf)
-        validate_human_isoforms(args)
+        validate_human_isoforms(SMRTLinkIsoSeqFilesCls, args)
         runner.make_readlength_csv_for_hg_isoforms()
 
     if args.reseq_to_human:
@@ -299,7 +299,7 @@ def run(args):
     # for sirv isoforms
     if not args.no_sirv:
         runner.ln_sirv_truth_dir(args.sirv_truth_dir)
-        validate_sirv_isoforms(args)
+        validate_sirv_isoforms(SMRTLinkIsoSeqFilesCls, args)
         runner.make_readlength_csv_for_sirv_isoforms()
 
     # write args and  data files to README
@@ -307,12 +307,12 @@ def run(args):
     runner.make_readme_txt(args=args, collapse_to_human=args.collapse_to_human, reseq_to_human=args.reseq_to_human, no_sirv=args.no_sirv)
 
 
-def validate_human_isoforms(args):
+def validate_human_isoforms(SMRTLinkIsoSeqFilesCls, args):
     """Collapse HQ isoforms to human and validate with MatchAnot,
     NO EXPLICT CRITERIA to determine validation of human isoforms PASS or FAIL.
     """
     vfs = ValidationFiles(args.val_dir)
-    slfs = SMRTLinkIsoSeqFiles(args.smrtlink_job_dir)
+    slfs = SMRTLinkIsoSeqFilesCls(args.smrtlink_job_dir)
     # Collapse HQ isoforms fastq to human and make representive isoforms, then map
     # representative isoforms to gmap reference, and sort output SAM (sorted_rep_sam).
     log.info("Collapsing HQ isoforms, and mapping representative collapsed isoforms to reference.")
@@ -353,13 +353,13 @@ def validate_human_isoforms(args):
     except Exception as e:
         log.warning("Could not validate with matchanot!")
 
-def validate_sirv_isoforms(args):
+def validate_sirv_isoforms(SMRTLinkIsoSeqFilesCls, args):
     """Collapse HQ isoforms to SIRV, get collapsed isoforms in fq and SAM.
     Compare collapsed isoforms against SIRV ground truth,
     return TP, FP, FN
     """
     vfs = ValidationFiles(args.val_dir)
-    slfs = SMRTLinkIsoSeqFiles(args.smrtlink_job_dir)
+    slfs = SMRTLinkIsoSeqFilesCls(args.smrtlink_job_dir)
 
     # Collapse HQ isoforms fastq to SIRV and make representive isoforms, then map
     # representative isoforms to gmap reference, and sort output SAM (sorted_rep_sam).
@@ -507,7 +507,7 @@ def get_parser():
 
 def main(args=sys.argv[1:]):
     """main"""
-    run(get_parser().parse_args(args))
+    run(SMRTLinkIsoSeqFiles, get_parser().parse_args(args))
 
 if __name__ == "__main__":
     main()
