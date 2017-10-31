@@ -69,7 +69,8 @@ setup(
     include_dirs=[numpy.get_include()],
     scripts=[], #'pbtranscript_internal_validation/validate_smrtlink_isoseq_rc0.py'],
     entry_points={'console_scripts': [
-        'validate_smrtlink_isoseq_rc0.py = pbtranscript_internal_validation.validate_smrtlink_isoseq_rc0:main'
+        'validate_smrtlink_isoseq_rc0.py = pbtranscript_internal_validation.validate_smrtlink_isoseq_rc0:main',
+        'validate_smrtlink_isoseq2_rc0.py = pbtranscript_internal_validation.validate_smrtlink_isoseq2_rc0:main',
     ]},
     package_dir={'pbtranscript_internal_validation': 'pbtranscript_internal_validation'},
     #package_data={'pbtranscript_internal_validation': []},

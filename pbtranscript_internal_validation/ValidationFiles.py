@@ -10,7 +10,7 @@ from collections import defaultdict
 from pbcore.io import ContigSet, FastaReader, FastqReader
 from pbtranscript.io import ContigSetReaderWrapper
 from pbtranscript.Utils import realpath, rmpath, ln, mkdir, execute
-from pbtranscript.io.SMRTLinkIsoSeqFiles import SMRTLinkIsoSeqFiles
+#from pbtranscript.io.SMRTLinkIsoSeqFiles import SMRTLinkIsoSeqFiles
 from .Utils import (consolidate_xml, json_to_attr_dict, get_subread_xml_from_job_path,
         reseq, coverage2str, subset_dict, m42coverage)
 
@@ -398,7 +398,7 @@ class ValidationRunner(ValidationFiles):
         log.info("Making soft link of sirv ground truth dir")
         ln(sirv_truth_dir, self.sirv_truth_dir)
 
-    def make_all_files_from_SMRTLink_job(self, make_readlength=True):
+    def make_all_files_from_SMRTLink_job(self, SMRTLinkIsoSeqFilesCls, make_readlength=True):
         """Make all data files from a smrtlink job, including
         * consolidate flnc and nfl xml files to fasta
         * collect ccs, classify, cluster reports from sl job and make validation_report_csv
@@ -412,10 +412,10 @@ class ValidationRunner(ValidationFiles):
         mkdir(self.reseq_to_hg_dir)
 
         smrtlink_job_dir = self.smrtlink_job_dir
-        self.make_reports_from_SMRTLink_job(smrtlink_job_dir)
-        self.consolidate_xml_from_SMRTLink_job(smrtlink_job_dir)
+        self.make_reports_from_SMRTLink_job(SMRTLinkIsoSeqFilesCls, smrtlink_job_dir)
+        self.consolidate_xml_from_SMRTLink_job(SMRTLinkIsoSeqFilesCls, smrtlink_job_dir)
         #symlink smrtlink_job_dir and files to validation dir
-        self.ln_files_from_SMRTLink_job(smrtlink_job_dir)
+        self.ln_files_from_SMRTLink_job(SMRTLinkIsoSeqFilesCls, smrtlink_job_dir)
         self.make_readlength_csvs()
 
     def make_readlength_csvs(self):
@@ -448,35 +448,40 @@ class ValidationRunner(ValidationFiles):
         make_readlength_csv(fasta_fn=self.collapsed_to_hg_rep_fq,
                             csv_fn=self.collapsed_to_hg_rep_readlength_csv)
 
-    def consolidate_xml_from_SMRTLink_job(self, smrtlink_job_dir):
+    def consolidate_xml_from_SMRTLink_job(self, SMRTLinkIsoSeqFilesCls, smrtlink_job_dir):
         """Consolidate xml files from SMRTLink job dir"""
         log.info("consolidate xml files from smrtlink job")
-        sl_job = SMRTLinkIsoSeqFiles(smrtlink_job_dir)
+        sl_job = SMRTLinkIsoSeqFilesCls(smrtlink_job_dir)
+
+        for f in (self.isoseq_flnc_fa, self.isoseq_nfl_fa):
+            if op.exists(f):
+                rmpath(f)
 
         try:
-            for f in (self.isoseq_flnc_fa, self.isoseq_nfl_fa):
-                if op.exists(f):
-                    rmpath(f)
-            for i in range(1, 1000):
-                d = op.join(sl_job.tasks_dir, 'pbtranscript.tasks.classify-%s' % i)
-                if not op.exists(d):
-                    break
-                flnc_fa = op.join(d, 'isoseq_flnc.fasta')
-                nfl_fa = op.join(d, 'isoseq_nfl.fasta')
-                execute('cat %s >> %s' % (flnc_fa, self.isoseq_flnc_fa))
-                execute('cat %s >> %s' % (nfl_fa, self.isoseq_nfl_fa))
+            execute('cp {} {}'.format(sl_job.isoseq_flnc_fa, self.isoseq_flnc_fa))
+            execute('cp {} {}'.format(sl_job.isoseq_nfl_fa, self.isoseq_nfl_fa))
         except Exception:
-            # Failed to cat fasta files, has to use consolidate_xml which is 10X slower
-            # Consolidate isoseq_flnc.fasta
-            consolidate_xml(src=sl_job.isoseq_flnc_ds, dst=self.isoseq_flnc_fa)
+            try:
+                for i in range(1, 1000):
+                    d = op.join(sl_job.tasks_dir, 'pbtranscript.tasks.classify-%s' % i)
+                    if not op.exists(d):
+                        break
+                    flnc_fa = op.join(d, 'isoseq_flnc.fasta')
+                    nfl_fa = op.join(d, 'isoseq_nfl.fasta')
+                    execute('cat %s >> %s' % (flnc_fa, self.isoseq_flnc_fa))
+                    execute('cat %s >> %s' % (nfl_fa, self.isoseq_nfl_fa))
+            except Exception:
+                # Failed to cat fasta files, has to use consolidate_xml which is 10X slower
+                # Consolidate isoseq_flnc.fasta
+                consolidate_xml(src=sl_job.isoseq_flnc_ds, dst=self.isoseq_flnc_fa)
 
-            # Consolidate isoseq_nfl.fasta
-            consolidate_xml(src=sl_job.isoseq_nfl_ds, dst=self.isoseq_nfl_fa)
+                # Consolidate isoseq_nfl.fasta
+                consolidate_xml(src=sl_job.isoseq_nfl_ds, dst=self.isoseq_nfl_fa)
 
-    def ln_files_from_SMRTLink_job(self, smrtlink_job_dir):
+    def ln_files_from_SMRTLink_job(self, SMRTLinkIsoSeqFilesCls, smrtlink_job_dir):
         """Make soft links to existing isoseq output fasta|fastq files."""
         log.info("make soft links from smrtlink job")
-        sl_job = SMRTLinkIsoSeqFiles(smrtlink_job_dir)
+        sl_job = SMRTLinkIsoSeqFilesCls(smrtlink_job_dir)
         # Make a link of smrtlink dir
         ln(smrtlink_job_dir, op.join(self.root_dir, op.basename(sl_job.root_dir)))
 
@@ -497,11 +502,11 @@ class ValidationRunner(ValidationFiles):
         else:
             raise IOError("Could neither find %s or %s" % (src_ccs_fa, sl_job.ccs_fa_gz))
 
-    def make_reports_from_SMRTLink_job(self, smrtlink_job_dir):
+    def make_reports_from_SMRTLink_job(self, SMRTLinkIsoSeqFilesCls, smrtlink_job_dir):
         """Get reports from a SMRTLink job, including ccs report,
         classify report, cluster report, and write to self.validation_report_csv"""
         log.info("make reports from smrtlink job")
-        sl_job = SMRTLinkIsoSeqFiles(smrtlink_job_dir)
+        sl_job = SMRTLinkIsoSeqFilesCls(smrtlink_job_dir)
         reports_fn = [sl_job.ccs_report_json,
                       sl_job.classify_report_json,
                       sl_job.cluster_report_json]

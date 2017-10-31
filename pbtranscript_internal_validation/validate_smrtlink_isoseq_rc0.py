@@ -101,10 +101,15 @@ def summarize_reseq(m4_fn):
     n_mapped_refs = len(set([r.sID for r in records]))
     return (n_mapped_reads, n_mapped_refs)
 
-def collapse_to_reference(hq_fq, gmap_db, gmap_name, hq_lq_prefix_pickle,
+def collapse_to_reference(post_mapping_to_genome_runner_f,
+                          hq_fq, gmap_db, gmap_name, hq_lq_prefix_pickle,
                           out_dir, args, out_rep_fq, out_rep_sam,
                           out_gff, out_abundance, out_group):
     """
+    post_mapping_to_genome_runner_f -- a function, either
+    * pbtranscript.tasks.post_mapping_to_genome.post_mapping_to_genome_runner, or
+    * pbtranscript2.mains.post_mapping_to_genome.post_mapping_to_genome_runner
+
     hq_fq --- HQ isoforms in fastq format.
     out_dir --- where to output results.
     min_count --- minimum # of supportive FLNC reads to call an isoform HQ
@@ -114,6 +119,7 @@ def collapse_to_reference(hq_fq, gmap_db, gmap_name, hq_lq_prefix_pickle,
     and finally map representative isoforms to reference.
 
     Return (collapsed isoforms FASTQ, sorted SAM output)
+    hq_lq_prefix_pickle --> sample_to_uc_pickle.json in pbtranscript2
     """
     # Map HQ isoforms to GMAP reference genome
     log.info("Mapping HQ isoforms %s to reference %s/%s.", hq_fq, gmap_db, gmap_name)
@@ -135,8 +141,8 @@ def collapse_to_reference(hq_fq, gmap_db, gmap_name, hq_lq_prefix_pickle,
     #   * count abundance of collapsed isoform groups
     #   * filter collapsed isoforms based on abundance info
     #rep_fq = op.join(out_dir, "%s.rep.fastq" % out_prefix)
-    post_mapping_to_genome_runner(in_isoforms=hq_fq, in_sam=hq_sam,
-                                  in_pickle=hq_lq_prefix_pickle,
+    post_mapping_to_genome_runner_f(hq_fq, hq_sam,
+                                  hq_lq_prefix_pickle,
                                   out_isoforms=out_rep_fq,
                                   out_gff=out_gff,
                                   out_abundance=out_abundance,
@@ -275,7 +281,7 @@ def make_sane(args):
     return args
 
 
-def run(SMRTLinkIsoSeqFilesCls, args):
+def run(SMRTLinkIsoSeqFilesCls, post_mapping_to_genome_runner_f, args):
     """
     Collapse HQ isoforms from SMRTLink Iso-Seq (w/wo genome) job to hg38.
     """
@@ -284,12 +290,12 @@ def run(SMRTLinkIsoSeqFilesCls, args):
 
     # make data files and reports to validation dir
     log.info("Making links of smrtlink isoseq outputs")
-    runner.make_all_files_from_SMRTLink_job(make_readlength=args.make_readlength)
+    runner.make_all_files_from_SMRTLink_job(SMRTLinkIsoSeqFilesCls, make_readlength=args.make_readlength)
 
     # for human isoforms
     if args.collapse_to_human:
         runner.ln_gencode_gtf(args.gencode_gtf)
-        validate_human_isoforms(SMRTLinkIsoSeqFilesCls, args)
+        validate_human_isoforms(SMRTLinkIsoSeqFilesCls, post_mapping_to_genome_runner_f, args)
         runner.make_readlength_csv_for_hg_isoforms()
 
     if args.reseq_to_human:
@@ -299,7 +305,7 @@ def run(SMRTLinkIsoSeqFilesCls, args):
     # for sirv isoforms
     if not args.no_sirv:
         runner.ln_sirv_truth_dir(args.sirv_truth_dir)
-        validate_sirv_isoforms(SMRTLinkIsoSeqFilesCls, args)
+        validate_sirv_isoforms(SMRTLinkIsoSeqFilesCls, post_mapping_to_genome_runner_f, args)
         runner.make_readlength_csv_for_sirv_isoforms()
 
     # write args and  data files to README
@@ -307,7 +313,7 @@ def run(SMRTLinkIsoSeqFilesCls, args):
     runner.make_readme_txt(args=args, collapse_to_human=args.collapse_to_human, reseq_to_human=args.reseq_to_human, no_sirv=args.no_sirv)
 
 
-def validate_human_isoforms(SMRTLinkIsoSeqFilesCls, args):
+def validate_human_isoforms(SMRTLinkIsoSeqFilesCls, post_mapping_to_genome_runner_f, args):
     """Collapse HQ isoforms to human and validate with MatchAnot,
     NO EXPLICT CRITERIA to determine validation of human isoforms PASS or FAIL.
     """
@@ -317,6 +323,7 @@ def validate_human_isoforms(SMRTLinkIsoSeqFilesCls, args):
     # representative isoforms to gmap reference, and sort output SAM (sorted_rep_sam).
     log.info("Collapsing HQ isoforms, and mapping representative collapsed isoforms to reference.")
     dummy_rep_hq, sorted_rep_sam = collapse_to_reference(
+        post_mapping_to_genome_runner_f=post_mapping_to_genome_runner_f,
         hq_fq=vfs.hq_isoforms_fq, gmap_db=args.gmap_db, gmap_name=args.hg_gmap_name,
         hq_lq_prefix_pickle=slfs.hq_lq_prefix_pickle, out_dir=vfs.collapse_to_hg_dir,
         out_rep_fq=vfs.collapsed_to_hg_rep_fq, out_rep_sam=vfs.collapsed_to_hg_rep_sam,
@@ -353,7 +360,7 @@ def validate_human_isoforms(SMRTLinkIsoSeqFilesCls, args):
     except Exception as e:
         log.warning("Could not validate with matchanot!")
 
-def validate_sirv_isoforms(SMRTLinkIsoSeqFilesCls, args):
+def validate_sirv_isoforms(SMRTLinkIsoSeqFilesCls, post_mapping_to_genome_runner_f, args):
     """Collapse HQ isoforms to SIRV, get collapsed isoforms in fq and SAM.
     Compare collapsed isoforms against SIRV ground truth,
     return TP, FP, FN
@@ -365,7 +372,7 @@ def validate_sirv_isoforms(SMRTLinkIsoSeqFilesCls, args):
     # representative isoforms to gmap reference, and sort output SAM (sorted_rep_sam).
     log.info("Collapsing HQ isoforms to SIRV, and mapping representative collapsed isoforms to SIRV.")
     # Collapse HQ isoforms fastq to SIRV
-    collapse_to_reference(
+    collapse_to_reference(post_mapping_to_genome_runner_f=post_mapping_to_genome_runner_f,
         hq_fq=vfs.hq_isoforms_fq, gmap_db=args.gmap_db, gmap_name=args.sirv_gmap_name,
         hq_lq_prefix_pickle=slfs.hq_lq_prefix_pickle, out_dir=vfs.collapse_to_sirv_dir,
         out_rep_fq=vfs.collapsed_to_sirv_rep_fq, out_rep_sam=vfs.collapsed_to_sirv_rep_sam,
@@ -507,7 +514,7 @@ def get_parser():
 
 def main(args=sys.argv[1:]):
     """main"""
-    run(SMRTLinkIsoSeqFiles, get_parser().parse_args(args))
+    run(SMRTLinkIsoSeqFiles, post_mapping_to_genome_runner, get_parser().parse_args(args))
 
 if __name__ == "__main__":
     main()
