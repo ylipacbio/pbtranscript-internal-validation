@@ -495,7 +495,7 @@ class ValidationRunner(ValidationFiles):
             dst_ccs_gz = op.join(op.dirname(self.ccs_fa), 'ccs.fasta.gz')
             execute('rm -f %s && cp %s %s && gunzip %s' % (dst_ccs_fa, sl_job.ccs_fa_gz, dst_ccs_gz, dst_ccs_gz))
         else:
-            raise IOError("Could neither find %s or %s" % (src_ccs_fa, sl_job.ccs_fa.gz))
+            raise IOError("Could neither find %s or %s" % (src_ccs_fa, sl_job.ccs_fa_gz))
 
     def make_reports_from_SMRTLink_job(self, smrtlink_job_dir):
         """Get reports from a SMRTLink job, including ccs report,
