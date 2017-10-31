@@ -8,7 +8,7 @@ import filecmp
 from pbcore.util.Process import backticks
 from pbtranscript.Utils import mkdir, rmpath
 from pbtranscript_internal_validation import ValidationFiles, ValidationRunner
-from pbtranscript_internal_validation.validate_smrtlink_isoseq_rc0 import main
+from pbtranscript_internal_validation.validate_smrtlink_isoseq2_rc0 import main
 
 from test_setpath import smrtlink_isoseq_jobs, OUT_DIR
 
@@ -21,7 +21,10 @@ def test_validate_smrtlink_isoseq_rc0():
     rmpath(eval_dir)
     mkdir(eval_dir)
 
-    # identical to "validate_smrtlink_isoseq_rc0.py %s %s --collapse_to_human --reseq_to_human --make_readlength" % (rc0_dir, eval_dir)
+    # identical to "validate_smrtlink_isoseq2_rc0.py %s %s --collapse_to_human --reseq_to_human --make_readlength" % (rc0_dir, eval_dir)
+    #main(args=[rc0_dir, eval_dir, '--collapse_to_human', '--reseq_to_human', '--make_readlength'])
+
+    # identical to "validate_smrtlink_isoseq2_rc0.py %s %s" % (rc0_dir, eval_dir)
     main(args=[rc0_dir, eval_dir, '--collapse_to_human', '--reseq_to_human', '--make_readlength'])
 
     runner = ValidationRunner(eval_dir, rc0_dir)
