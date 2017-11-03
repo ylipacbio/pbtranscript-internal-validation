@@ -5,7 +5,7 @@ import sys
 import numpy
 
 __author__ = "etseng|yli@pacificbiosciences.com"
-version = "1.0.0"
+version = "2.0.0"
 
 if 'setuptools.extension' in sys.modules:
     m = sys.modules['setuptools.extension']
