@@ -484,10 +484,10 @@ def add_sge_arguments(parser):
 
 def get_parser():
     """Get argument parser."""
-    helpstr = "Validate an SMRTLink Iso-Seq job of RC0 sample by comparing with Human GenCode Annotation and SIRV ground truth"
+    helpstr = "Validate an SMRTLink Iso-Seq or IsoSeq2 job of RC0 sample by comparing with Human GenCode Annotation and SIRV ground truth"
     parser = argparse.ArgumentParser(helpstr, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    helpstr = "Smrtlink Iso-Seq job directory"
+    helpstr = "Smrtlink Iso-Seq or IsoSeq2 job directory"
     parser.add_argument("smrtlink_job_dir", help=helpstr)
 
     helpstr = "Validation out directory"
@@ -512,9 +512,45 @@ def get_parser():
     parser.add_argument("--sample_name", type=str, default='sample_name', help="Sample name")
     return parser
 
+
+from .io import SMRTLinkIsoSeq2Files
+from pbtranscript2.mains.post_mapping_to_genome import post_mapping_to_genome_runner as post_mapping_to_genome_runner2
+
+def post_mapping_to_genome_runner_f(in_isoforms, in_sam, in_pickle,
+            out_isoforms, out_gff, out_abundance, out_group, out_read_stat,
+            min_aln_coverage, min_aln_identity, min_flnc_coverage,
+            max_fuzzy_junction, allow_extra_5exon, min_count):
+    return post_mapping_to_genome_runner2(in_isoforms=in_isoforms, in_sam=in_sam,
+            in_json=in_pickle, out_isoforms=out_isoforms, out_gff=out_gff,
+            out_abundance=out_abundance, out_group=out_group, out_read_stat=None,
+            min_aln_coverage=min_aln_coverage, min_aln_identity=min_aln_identity,
+            max_fuzzy_junction=max_fuzzy_junction, allow_extra_5exon=allow_extra_5exon,
+            min_count=min_count)
+
+
+def get_cls_runner_from_args(smrtlink_job_dir):
+    """
+    If job is IsoSeq, return (SMRTLinkIsoSeqFiles, post_mapping_to_genome_runner)
+    If job is IsoSeq2, return (SMRTLinkIsoSeq2Files, )
+    """
+    # figure out is this an IsoSeq job or an IsoSeq2 job?
+    is_isoseq = op.exists(op.join(smrtlink_job_dir, 'tasks', 'pbtranscript.tasks.combine_cluster_bins-0'))
+    is_isoseq2 = op.exists(op.join(smrtlink_job_dir, 'tasks', 'pbtranscript2tools.tasks.create_workspace-0'))
+    if is_isoseq:
+        log.info("Detected IsoSeq job {!r}.")
+        return (SMRTLinkIsoSeqFiles, post_mapping_to_genome_runner)
+    elif is_isoseq2:
+        log.info("Detected IsoSeq2 job {!r}.")
+        return (SMRTLinkIsoSeq2Files,  post_mapping_to_genome_runner_f)
+    else:
+        raise ValueError("Job {!r} must be either IsoSeq or IsoSeq2.".format(smrtlink_job_dir))
+
+
 def main(args=sys.argv[1:]):
     """main"""
-    run(SMRTLinkIsoSeqFiles, post_mapping_to_genome_runner, get_parser().parse_args(args))
+    args = get_parser().parse_args(args)
+    cls, runner = get_cls_runner_from_args(args.smrtlink_job_dir)
+    run(cls, runner, args)
 
 if __name__ == "__main__":
     main()

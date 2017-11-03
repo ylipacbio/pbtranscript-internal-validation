@@ -1,3 +1,7 @@
+Update:
+    * `validate_smrtlink_isoseq_rc0.py` validates both IsoSeq and IsoSeq2 jobs.
+
+
 Package: 
 
     * pbtranscript-internal-validation
