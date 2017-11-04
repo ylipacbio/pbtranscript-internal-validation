@@ -13,7 +13,8 @@ class SMRTLinkIsoSeq2Files(object):
         self.tasks_dir = f('tasks')
         self.ws_json = f('tasks', 'pbtranscript2tools.tasks.create_workspace-0', 'isoseq2_workspace.json')
         self.ws_obj = WorkSpace.from_json(self.ws_json)
-        self.ws_obj.root_dir = f(op.dirname(self.ws_json), 'workspace')
+        ws_root_dir = f(op.dirname(self.ws_json), 'workspace')
+        self.ws_obj.root_dir = ws_root_dir if op.exists(ws_root_dir) else f('tasks', 'workspace')
         self.subreads_xml = self.ws_obj.subreads_xml
         self.isoseq_flnc_ds = f('tasks', 'pbcoretools.tasks.gather_contigset-3', 'file.contigset.xml')
         self.isoseq_nfl_ds = f('tasks', 'pbcoretools.tasks.gather_contigset-2', 'file.contigset.xml')
