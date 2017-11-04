@@ -1,0 +1,1 @@
+from .SMRTLinkIsoSeq2Files import SMRTLinkIsoSeq2Files
