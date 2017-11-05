@@ -1,3 +1,4 @@
+#!/bin/bash
 type module >& /dev/null || . /mnt/software/Modules/current/init/bash
 
 # This must come first so that everything else we add later
