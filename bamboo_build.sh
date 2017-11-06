@@ -43,7 +43,7 @@ if [ -e $THISDIR/../pbcommand ] ; then
     pushd ../pbcommand
     pwd
     ls
-    pip install -v --user --find-links=${WHEELHOUSE} --no-index --edit --no-deps .
+    pip install -v --user --find-links=${WHEELHOUSE} --no-index --no-deps --edit  .
     popd
 else
     pip install -v --user --find-links=${WHEELHOUSE} --no-index pbcommand
@@ -51,7 +51,7 @@ fi
 
 if [ -e $THISDIR/../pbcoretools ] ; then
     pushd ../pbcoretools
-    pip install -v --user --find-links=${WHEELHOUSE} --no-index --edit --no-deps .
+    pip install -v --user --find-links=${WHEELHOUSE} --no-index --no-deps --edit  .
     popd
 else
     pip install -v --user --find-links=${WHEELHOUSE} --no-index pbcoretools
