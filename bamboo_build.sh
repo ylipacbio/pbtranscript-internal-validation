@@ -43,7 +43,7 @@ if [ -e $THISDIR/../pbcommand ] ; then
     pushd ../pbcommand
     pwd
     ls
-    pip install -v --user --find-links=${WHEELHOUSE} --no-index --edit .
+    pip install -v --user --find-links=${WHEELHOUSE} --no-index --edit --no-deps .
     popd
 else
     pip install -v --user --find-links=${WHEELHOUSE} --no-index pbcommand
