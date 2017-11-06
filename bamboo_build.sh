@@ -51,7 +51,7 @@ fi
 
 if [ -e $THISDIR/../pbcoretools ] ; then
     pushd ../pbcoretools
-    pip install -v --user --find-links=${WHEELHOUSE} --no-index --edit .
+    pip install -v --user --find-links=${WHEELHOUSE} --no-index --edit --no-deps .
     popd
 else
     pip install -v --user --find-links=${WHEELHOUSE} --no-index pbcoretools
