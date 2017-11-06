@@ -6,26 +6,14 @@ set -vex
 ls -larth
 ls -larth $THISDIR/..
 
-# If .pyc exists from previous run, and if files have moved, tests can fail. #TODO(CD): drop this
-#find pbtranscript2 -name '*.pyc' | xargs rm -f
-
-
-# Reinvent the wheel (7s -- turn back on someday maybe)
-#python setup.py bdist_wheel
-# (goes into ./dist/)
-# (not needed yet, but a useful quick check)
+make clean
 
 WHEELHOUSE=/home/cdunn/wheelhouse/gcc-6
 ls -larth ${WHEELHOUSE}
 
-
-pip install -v --user --find-links=${WHEELHOUSE} --no-index pytest
-make test-fast
-
 # Build with dependencies (fairly fast)
 pip install --user --find-links=${WHEELHOUSE} --no-index pytest pytest-cov pylint cython
 
-#pip --no-cache-dir install ... ?
 
 ZLIB_CFLAGS=$(pkg-config zlib --cflags)
 ZLIB_LIBS=$(pkg-config zlib --libs)
@@ -42,6 +30,7 @@ pip install -v --user 'networkx==1.1'
 python -c "import networkx; print networkx.__version__;"
 python -c "import networkx; a=networkx.Graph(); a.add_edge('a', 'b'); a.degree().items();"
 
+
 if [ -e $THISDIR/../pbcore ] ; then
     pushd ../pbcore
     pip install -v --user --find-links=${WHEELHOUSE} --no-index --edit .
@@ -50,16 +39,49 @@ else
     pip install -v --user --find-links=${WHEELHOUSE} --no-index pbcore
 fi
 
-# Drop --no-index, in case we are missing something.
-pip install -v --user --find-links=${WHEELHOUSE} --edit .
+if [ -e $THISDIR/../pbcoretools ] ; then
+    pushd ../pbcoretools
+    pip install -v --user --find-links=${WHEELHOUSE} --no-index --edit .
+    popd
+else
+    pip install -v --user --find-links=${WHEELHOUSE} --no-index pbcoretools
+fi
+
+if [ -e $THISDIR/../pbcommand ] ; then
+    pushd ../pbcommand
+    pip install -v --user --find-links=${WHEELHOUSE} --no-index --edit .
+    popd
+else
+    pip install -v --user --find-links=${WHEELHOUSE} --no-index pbcommand
+fi
+
+if [ -e $THISDIR/../pbtranscript ] ; then
+    pushd ../pbtranscript
+    pip install -v --user --find-links=${WHEELHOUSE} --no-index --no-deps --edit .
+    popd
+else
+    pip install -v --user --find-links=${WHEELHOUSE} --no-index pbtranscript
+fi
+
+if [ -e $THISDIR/../pbtranscript2 ] ; then
+    pushd ../pbtranscript2
+    pip install -v --user --find-links=${WHEELHOUSE} --no-index --no-deps --edit .
+    popd
+else
+    pip install -v --user --find-links=${WHEELHOUSE} --no-index pbtranscript2
+fi
+
+python -c "import pbcore"
+python -c "import pbcoretools"
+python -c "import pbcommand"
+python -c "import pbtranscript"
+python -c "import pbtranscript2"
+
+pip install -v --user --edit . 
 
 # Test.
-export MY_TEST_FLAGS="-v -s --durations=0 --cov=pbtranscript2 --cov-report=term-missing --cov-report=xml:coverage.xml --cov-branch"
-time make pytest
-sed -i -e 's@filename="@filename="./pbtranscript2/@g' coverage.xml
-
-time make pylint
-
+make pylint
+time make test
 
 pwd
 ls -larth

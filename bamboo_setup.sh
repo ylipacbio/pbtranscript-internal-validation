@@ -1,8 +1,10 @@
 #!/bin/bash
+set -vex
 type module >& /dev/null || . /mnt/software/Modules/current/init/bash
 
 # This must come first so that everything else we add later
 # will take precedence.
+module purge
 module load smrttools/incremental
 which blasr
 which pbindex
