@@ -10,10 +10,10 @@ which blasr
 which pbindex
 which pbdagcon
 
-module load gcc/6.4.0
+module load gcc
 module load zlib
-module load ccache/3.2.3
-module load python/2.7.13-UCS4
+module load ccache
+module load python/2
 
 # For isolation:
 export PYTHONUSERBASE=$(pwd)/LOCAL
