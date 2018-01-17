@@ -2,6 +2,7 @@
 """
 Validate an IsoSeq SMRTLink job of RC0 sample.
 """
+from __future__ import print_function
 import unittest
 import os.path as op
 import filecmp
@@ -15,7 +16,7 @@ from test_setpath import smrtlink_isoseq_jobs, OUT_DIR
 
 def test_validate_smrtlink_isoseq_rc0():
     """Test calling validate_smrtlink_isoseq_rc0.py from command line"""
-    print smrtlink_isoseq_jobs
+    print(smrtlink_isoseq_jobs)
     rc0_dir = smrtlink_isoseq_jobs['TINY']
     eval_dir = op.join(OUT_DIR, 'test_validate_rc0')
     rmpath(eval_dir)
@@ -27,5 +28,5 @@ def test_validate_smrtlink_isoseq_rc0():
     runner = ValidationRunner(eval_dir, rc0_dir)
     for desc, fn in runner.all_files:
         if not op.exists(fn):
-            print 'File %s does not exist' % fn
+            print('File %s does not exist' % fn)
             assert 'File %s does not exist' % fn == False

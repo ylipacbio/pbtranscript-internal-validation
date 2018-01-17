@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+from __future__ import print_function
 import unittest
 import os.path as op
 import filecmp
@@ -23,9 +24,9 @@ def test_filter_sam_by_targets():
     in_sam = op.join(d, 'in.sam')
     out_sam = op.join(d, 'out.sam')
     filtered_sam = op.join(d, 'filted.sam')
-    print in_sam
-    print out_sam
-    print filtered_sam
+    print(in_sam)
+    print(out_sam)
+    print(filtered_sam)
 
     comment = '#random\n'
     aln1 = 'read1\tsomething\tchr1\n'
@@ -39,7 +40,7 @@ def test_filter_sam_by_targets():
     op.exists(out_sam)
     op.exists(filtered_sam)
     for l in open(out_sam, 'r'):
-        print l
+        print(l)
 
     assert [l for l in open(out_sam, 'r')] == [comment, aln1]
     assert [l for l in open(filtered_sam, 'r')] == [comment, aln2]
