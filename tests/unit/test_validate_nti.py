@@ -3,6 +3,7 @@
 Validate an IsoSeq SMRTLink job of human caner NTI sample.
 NOTE: This validation is slow
 """
+from __future__ import print_function
 
 import unittest
 import os.path as op
@@ -17,7 +18,7 @@ from test_setpath import smrtlink_isoseq_jobs, OUT_DIR
 
 def test_validate_nti():
     """Test calling validate_smrtlink_isoseq_rc0.py from command line"""
-    print smrtlink_isoseq_jobs
+    print(smrtlink_isoseq_jobs)
     nti_dir = smrtlink_isoseq_jobs['NTI']
     eval_dir = op.join(OUT_DIR, 'test_validate_nti')
     rmpath(eval_dir)
@@ -29,5 +30,5 @@ def test_validate_nti():
     runner = ValidationRunner(eval_dir, nti_dir)
     for desc, fn in runner.common_files + runner.collapse_human_files + runner.reseq_human_files:
         if not op.exists(fn):
-            print 'File %s does not exist' % fn
+            print('File %s does not exist' % fn)
             assert 'File %s does not exist' % fn == False

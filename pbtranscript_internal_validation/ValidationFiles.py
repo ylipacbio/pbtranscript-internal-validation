@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 """Define isoseq validation output files."""
+from __future__ import print_function
 
 import logging
 import os.path as op
@@ -512,7 +513,7 @@ class ValidationRunner(ValidationFiles):
                       sl_job.cluster_report_json]
         d = dict()
         for report_fn in reports_fn:
-            print report_fn
+            print(report_fn)
             for key, val in json_to_attr_dict(report_fn).iteritems():
                 d[key] = val
 
