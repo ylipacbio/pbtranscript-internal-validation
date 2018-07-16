@@ -11,9 +11,10 @@ from collections import defaultdict
 from pbcore.io import ContigSet, FastaReader, FastqReader
 from pbtranscript.io import ContigSetReaderWrapper
 from pbtranscript.Utils import realpath, rmpath, ln, mkdir, execute
-#from pbtranscript.io.SMRTLinkIsoSeqFiles import SMRTLinkIsoSeqFiles
+from pbtranscript2.independent.system import touch
 from .Utils import (consolidate_xml, json_to_attr_dict, get_subread_xml_from_job_path,
         reseq, coverage2str, subset_dict, m42coverage)
+from .io.SMRTLinkIsoSeq3Files import SMRTLinkIsoSeq3Files
 
 FORMATTER = op.basename(__file__) + ':%(levelname)s:'+'%(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMATTER)
@@ -399,7 +400,7 @@ class ValidationRunner(ValidationFiles):
         log.info("Making soft link of sirv ground truth dir")
         ln(sirv_truth_dir, self.sirv_truth_dir)
 
-    def make_all_files_from_SMRTLink_job(self, SMRTLinkIsoSeqFilesCls, make_readlength=True):
+    def make_all_files_from_SMRTLink_job(self, SMRTLinkIsoSeqFilesCls, make_readlength=True, make_reports=True):
         """Make all data files from a smrtlink job, including
         * consolidate flnc and nfl xml files to fasta
         * collect ccs, classify, cluster reports from sl job and make validation_report_csv
@@ -413,11 +414,14 @@ class ValidationRunner(ValidationFiles):
         mkdir(self.reseq_to_hg_dir)
 
         smrtlink_job_dir = self.smrtlink_job_dir
-        self.make_reports_from_SMRTLink_job(SMRTLinkIsoSeqFilesCls, smrtlink_job_dir)
+        #TODO enable consolidate_xml
         self.consolidate_xml_from_SMRTLink_job(SMRTLinkIsoSeqFilesCls, smrtlink_job_dir)
         #symlink smrtlink_job_dir and files to validation dir
         self.ln_files_from_SMRTLink_job(SMRTLinkIsoSeqFilesCls, smrtlink_job_dir)
-        self.make_readlength_csvs()
+
+        #if make_reports:
+        #    self.make_reports_from_SMRTLink_job(SMRTLinkIsoSeqFilesCls, smrtlink_job_dir)
+        #    self.make_readlength_csvs()
 
     def make_readlength_csvs(self):
         """Make all read length csv files."""
@@ -453,6 +457,10 @@ class ValidationRunner(ValidationFiles):
         """Consolidate xml files from SMRTLink job dir"""
         log.info("consolidate xml files from smrtlink job")
         sl_job = SMRTLinkIsoSeqFilesCls(smrtlink_job_dir)
+        if SMRTLinkIsoSeqFilesCls == SMRTLinkIsoSeq3Files:
+            sl_job.export_isoseq_flnc_fa(isoseq_flnc_fa=self.isoseq_flnc_fa)
+            touch(self.isoseq_nfl_fa)
+            return
 
         for f in (self.isoseq_flnc_fa, self.isoseq_nfl_fa):
             if op.exists(f):
@@ -486,31 +494,47 @@ class ValidationRunner(ValidationFiles):
         # Make a link of smrtlink dir
         ln(smrtlink_job_dir, op.join(self.root_dir, op.basename(sl_job.root_dir)))
 
-        # Make a link of consensus isoforms fa, hq|lq isoforms fa|fq
-        ln(src=sl_job.consensus_isoforms_fa, dst=self.consensus_isoforms_fa)
+        # Make a link of consensus isoforms fa, hq|lq isoforms fa|fq, isoseq_flnc.fasta
         ln(src=sl_job.hq_isoforms_fa, dst=self.hq_isoforms_fa)
         ln(src=sl_job.hq_isoforms_fq, dst=self.hq_isoforms_fq)
         ln(src=sl_job.lq_isoforms_fa, dst=self.lq_isoforms_fa)
         ln(src=sl_job.lq_isoforms_fq, dst=self.lq_isoforms_fq)
 
-        src_ccs_fa = op.join(op.dirname(sl_job.ccs_fa_gz), 'ccs.fasta')
-        if op.exists(src_ccs_fa):
-            ln(src=src_ccs_fa, dst=self.ccs_fa)
-        elif op.exists(sl_job.ccs_fa_gz):
-            dst_ccs_fa = op.join(op.dirname(self.ccs_fa), 'ccs.fasta')
-            dst_ccs_gz = op.join(op.dirname(self.ccs_fa), 'ccs.fasta.gz')
-            execute('rm -f %s && cp %s %s && gunzip %s' % (dst_ccs_fa, sl_job.ccs_fa_gz, dst_ccs_gz, dst_ccs_gz))
+        ccsxml = op.join(sl_job.root_dir, 'tasks/pbcoretools.tasks.gather_ccsset-1/file.consensusreadset.xml')
+        if op.exists(ccsxml):
+            execute('rm -f {dst}.fasta && bam2fasta {src} -o {dst} && gunzip {dst}.fasta.gz'.format(src=ccsxml, dst=op.join(op.dirname(self.ccs_fa), 'ccs')))
         else:
-            raise IOError("Could neither find %s or %s" % (src_ccs_fa, sl_job.ccs_fa_gz))
+            src_ccs_fa = op.join(op.dirname(sl_job.ccs_fa_gz), 'ccs.fasta')
+            if op.exists(src_ccs_fa):
+                ln(src=src_ccs_fa, dst=self.ccs_fa)
+            elif op.exists(sl_job.ccs_fa_gz):
+                dst_ccs_fa = op.join(op.dirname(self.ccs_fa), 'ccs.fasta')
+                dst_ccs_gz = op.join(op.dirname(self.ccs_fa), 'ccs.fasta.gz')
+                execute('rm -f %s && cp %s %s && gunzip %s' % (dst_ccs_fa, sl_job.ccs_fa_gz, dst_ccs_gz, dst_ccs_gz))
+            elif op.exists(src_ccs_fa+'.zip'):
+                dst_ccs_fa = op.join(op.dirname(self.ccs_fa), 'ccs.fasta')
+                dst_ccs_zip = op.join(op.dirname(self.ccs_fa), 'ccs.fasta.zip')
+                execute('rm -f %s && cp %s %s && unzip %s' % (dst_ccs_fa, src_ccs_fa+'.zip', dst_ccs_zip, dst_ccs_zip))
+            else:
+                raise IOError("Could neither find %s or %s" % (src_ccs_fa, sl_job.ccs_fa_gz))
+
+        if SMRTLinkIsoSeqFilesCls == SMRTLinkIsoSeq3Files:
+            sl_job.export_unpolished_fa(unpolished_fa=self.consensus_isoforms_fa)
+            return
+        else:
+            ln(src=sl_job.consensus_isoforms_fa, dst=self.consensus_isoforms_fa)
 
     def make_reports_from_SMRTLink_job(self, SMRTLinkIsoSeqFilesCls, smrtlink_job_dir):
         """Get reports from a SMRTLink job, including ccs report,
         classify report, cluster report, and write to self.validation_report_csv"""
+        if SMRTLinkIsoSeqFilesCls == SMRTLinkIsoSeq3Files:
+            return
         log.info("make reports from smrtlink job")
         sl_job = SMRTLinkIsoSeqFilesCls(smrtlink_job_dir)
         reports_fn = [sl_job.ccs_report_json,
                       sl_job.classify_report_json,
                       sl_job.cluster_report_json]
+
         d = dict()
         for report_fn in reports_fn:
             print(report_fn)
