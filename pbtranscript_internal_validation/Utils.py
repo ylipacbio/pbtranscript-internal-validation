@@ -86,7 +86,11 @@ def get_job_path_from_url(url_path):
 def get_subread_xml_from_job_path(job_path):
     """Given a smrtlink job path, return its asscoiated subread xml, either from workflow/datastore.json or pbscala-job.sh"""
     datastore_json_fn = op.join(job_path, 'workflow', 'datastore.json')
-    d = {r['fileTypeId']: r['path'] for r in json.load(open(datastore_json_fn, 'r'))['files']}
+    d = {}
+    try:
+        d = {r['fileTypeId']: r['path'] for r in json.load(open(datastore_json_fn, 'r'))['files']}
+    except Exception:
+        pass
     if 'PacBio.DataSet.SubreadSet' in d:
         return str(d['PacBio.DataSet.SubreadSet'])
     else: # fall back to get eid_subread from pbscala-job.sh
