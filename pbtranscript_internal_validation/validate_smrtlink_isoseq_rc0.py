@@ -367,22 +367,34 @@ def validate_human_isoforms(SMRTLinkIsoSeqFilesCls, post_mapping_to_genome_runne
         log.warning("Could not validate with matchanot!")
 
 
-def collapse_to_reference_isoseq3(vfs, slfs, gmap_name, gmap_db, out_dir, args):
+def collapse_to_reference_isoseq3(vfs, slfs, gmap_name, gmap_db, out_dir,
+        out_rep_fq, out_rep_sam, out_gff, out_abundance, out_group, args):
     hq_sam = op.join(out_dir, "%s.sorted.sam" % op.basename(vfs.hq_isoforms_fq))
     map_isoforms_runner(hq_fq=vfs.hq_isoforms_fq, hq_sam=hq_sam,
                         gmap_name=gmap_name, gmap_db=gmap_db, nproc=C.GMAP_NPROC,
                         work_dir=op.join(out_dir, 'sge_map_hq_to_genome'),
                         use_sge=args.use_sge, nchunks=args.sge_nodes, sge_queue=args.sge_queue)
-#    c1 = 'isocollapse {hq_fasta} {o_sorted_sam} {transcriptset} {flnc_bam} {out_dir}/out && echo $?'.\
-#            format(hq_fasta=vfs.hq_isoforms_fa, o_sorted_sam=hq_sam, transcriptset=slfs.hq_isoforms_bam,
-#                    flnc_bae=slfs.isoseq_flnc.bam, out_prefix=vfs.collapse_to_sirv_dir + 'touse')
+    output_prefix = op.join(vfs.collapse_to_sirv_dir, 'touse')
     from isocollapse.tasks.collapse_mapped_isoforms import run_main as isocollapse_runner
-    isocollapse_runner(i_f=vfs.hq_isoforms_fqq, i_sam=hq_sam,
+    isocollapse_runner(i_fq=vfs.hq_isoforms_fq, i_sam=hq_sam,
                        i_transcript=slfs.hq_isoforms_transcriptset,
                        i_flnc_bam=slfs.isoseq_flnc_bam,
-                       output_prefix, out_isoforms, out_gff, out_group, out_abundance, out_read_stat,
-                       min_aln_coverage, min_aln_identity, max_fuzzy_junction, allow_extra_5exon)
-    return
+                       output_prefix=output_prefix,
+                       out_isoforms=out_rep_fq,
+                       out_gff=out_gff, out_group=out_group,
+                       out_abundance=out_abundance,
+                       out_read_stat=None,
+                       min_aln_coverage=args.min_aln_coverage,
+                       min_aln_identity=args.min_aln_identity,
+                       max_fuzzy_junction=args.max_fuzzy_junction,
+                       allow_extra_5exon=args.allow_extra_5exon)
+    # Map representitive isoforms to reference
+    log.info("Mapping representative isoforms %s to reference %s/%s", out_rep_fq, gmap_db, gmap_name)
+    map_isoforms_runner(hq_fq=out_rep_fq, hq_sam=out_rep_sam,
+                        work_dir=op.join(out_dir, 'sge_map_rep_to_genome'),
+                        gmap_name=gmap_name, gmap_db=gmap_db, nproc=C.GMAP_NPROC,
+                        use_sge=args.use_sge, nchunks=args.sge_nodes, sge_queue=args.sge_queue)
+    return (out_rep_fq, out_rep_sam)
 
 def validate_sirv_isoforms(SMRTLinkIsoSeqFilesCls, post_mapping_to_genome_runner_f, args):
     """Collapse HQ isoforms to SIRV, get collapsed isoforms in fq and SAM.
@@ -393,7 +405,12 @@ def validate_sirv_isoforms(SMRTLinkIsoSeqFilesCls, post_mapping_to_genome_runner
     slfs = SMRTLinkIsoSeqFilesCls(args.smrtlink_job_dir)
 
     if SMRTLinkIsoSeqFilesCls == SMRTLinkIsoSeq3Files:
-        collapse_to_reference_isoseq3(vfs=vfs, slfs=slfs, gmap_name=args.sirv_gmap_name, gmap_db=args.gmap_db, out_dir=vfs.collapse_to_sirv_dir,args=args)
+        collapse_to_reference_isoseq3(vfs=vfs, slfs=slfs,
+            gmap_name=args.sirv_gmap_name, gmap_db=args.gmap_db,
+            out_dir=vfs.collapse_to_sirv_dir,
+            out_rep_fq=vfs.collapsed_to_sirv_rep_fq, out_rep_sam=vfs.collapsed_to_sirv_rep_sam,
+            out_gff=vfs.collapsed_to_sirv_gff, out_abundance=vfs.collapsed_to_sirv_abundance,
+            out_group=vfs.collapsed_to_sirv_group, args=args)
         return
 
     # Collapse HQ isoforms fastq to SIRV and make representive isoforms, then map
@@ -562,7 +579,7 @@ def get_cls_runner_from_args(smrtlink_job_dir):
     # figure out is this an IsoSeq job or an IsoSeq2 job?
     is_isoseq = op.exists(op.join(smrtlink_job_dir, 'tasks', 'pbtranscript.tasks.combine_cluster_bins-0'))
     is_isoseq2 = op.exists(op.join(smrtlink_job_dir, 'tasks', 'pbtranscript2tools.tasks.create_workspace-0'))
-    is_isoseq3 = op.exists(op.join(smrtlink_job_dir, 'tasks', 'isoseqs.tasks.charlie-0'))
+    is_isoseq3 = op.exists(op.join(smrtlink_job_dir, 'tasks', 'isoseq3.tasks.cluster-0'))
     if is_isoseq:
         log.info("Detected IsoSeq job {!r}.".format(smrtlink_job_dir))
         return (SMRTLinkIsoSeqFiles, post_mapping_to_genome_runner)
@@ -573,7 +590,7 @@ def get_cls_runner_from_args(smrtlink_job_dir):
         log.info("Detected IsoSeq3 job {!r}.".format(smrtlink_job_dir))
         return (SMRTLinkIsoSeq3Files, post_mapping_to_genome_runner)
     else:
-        raise ValueError("Job {!r} must be either IsoSeq or IsoSeq2.".format(smrtlink_job_dir))
+        raise ValueError("Job {!r} must be either IsoSeq or IsoSeq2 or IsoSeq3.".format(smrtlink_job_dir))
 
 
 def main(args=sys.argv[1:]):
