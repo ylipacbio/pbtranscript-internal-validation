@@ -30,6 +30,9 @@ from . import ValidationConstants as C
 from .Utils import reseq
 from pbtranscript.collapsing.CollapsingUtils import map_isoforms_and_sort
 
+from .io import SMRTLinkIsoSeq2Files
+from .io.SMRTLinkIsoSeq3Files import SMRTLinkIsoSeq3Files
+from pbtranscript2.mains.post_mapping_to_genome import post_mapping_to_genome_runner as post_mapping_to_genome_runner2
 
 __author__ = 'etseng@pacb.com, yli@pacb.com'
 
@@ -101,6 +104,20 @@ def summarize_reseq(m4_fn):
     n_mapped_refs = len(set([r.sID for r in records]))
     return (n_mapped_reads, n_mapped_refs)
 
+
+def map_isoforms_runner(hq_fq, hq_sam, gmap_name, gmap_db, work_dir, nproc, use_sge, nchunks, sge_queue):
+    # Map HQ isoforms to GMAP reference genome
+    mkdir(work_dir)
+    # GMAP jobs are very slow, decide to run GMAP jobs on SGE instead
+    if not use_sge:
+        map_isoforms_and_sort(input_filename=hq_fq, sam_filename=hq_sam,
+                              gmap_db_dir=gmap_db, gmap_db_name=gmap_name, gmap_nproc=nproc)
+    else:
+        sge_map_isoform_to_genome(fq_fn=hq_fq, gmap_db=gmap_db, gmap_name=gmap_name,
+                                  o_sam_fn=hq_sam, nchunks=nchunks, work_dir=work_dir,
+                                  gmap_nproc=nproc, sge_queue=sge_queue)
+
+
 def collapse_to_reference(post_mapping_to_genome_runner_f,
                           hq_fq, gmap_db, gmap_name, hq_lq_prefix_pickle,
                           out_dir, args, out_rep_fq, out_rep_sam,
@@ -121,19 +138,12 @@ def collapse_to_reference(post_mapping_to_genome_runner_f,
     Return (collapsed isoforms FASTQ, sorted SAM output)
     hq_lq_prefix_pickle --> sample_to_uc_pickle.json in pbtranscript2
     """
-    # Map HQ isoforms to GMAP reference genome
     log.info("Mapping HQ isoforms %s to reference %s/%s.", hq_fq, gmap_db, gmap_name)
-    mkdir(out_dir)
     hq_sam = op.join(out_dir, "%s.sorted.sam" % op.basename(hq_fq))
-    # GMAP jobs are very slow, decide to run GMAP jobs on SGE instead
-    if not args.use_sge:
-        map_isoforms_and_sort(input_filename=hq_fq, sam_filename=hq_sam,
-                              gmap_db_dir=gmap_db, gmap_db_name=gmap_name, gmap_nproc=C.GMAP_NPROC)
-    else:
-        sge_map_isoform_to_genome(fq_fn=hq_fq, gmap_db=gmap_db, gmap_name=gmap_name,
-                                  o_sam_fn=hq_sam, nchunks=args.sge_nodes,
-                                  work_dir=op.join(out_dir, 'sge_map_hq_to_genome'),
-                                  gmap_nproc=C.GMAP_NPROC, sge_queue=args.sge_queue)
+    map_isoforms_runner(hq_fq=hq_fq, hq_sam=hq_sam,
+                        work_dir=op.join(out_dir, 'sge_map_hq_to_genome'),
+                        gmap_name=gmap_name, gmap_db=gmap_db, nproc=C.GMAP_NPROC,
+                        use_sge=args.use_sge, nchunks=args.sge_nodes, sge_queue=args.sge_queue)
 
     log.info("Collapsing and filtering HQ isoforms to create representative isoforms.")
     # Post mapping to genome analysis, including
@@ -156,14 +166,10 @@ def collapse_to_reference(post_mapping_to_genome_runner_f,
 
     # Map representitive isoforms to reference
     log.info("Mapping representative isoforms %s to reference %s/%s", out_rep_fq, gmap_db, gmap_name)
-    if not args.use_sge:
-        map_isoforms_and_sort(input_filename=out_rep_fq, sam_filename=out_rep_sam,
-                              gmap_db_dir=gmap_db, gmap_db_name=gmap_name, gmap_nproc=C.GMAP_NPROC)
-    else:
-        sge_map_isoform_to_genome(fq_fn=out_rep_fq, gmap_db=gmap_db, gmap_name=gmap_name,
-                                  o_sam_fn=out_rep_sam, nchunks=args.sge_nodes,
-                                  work_dir=op.join(out_dir, 'sge_map_rep_to_genome'),
-                                  gmap_nproc=C.GMAP_NPROC, sge_queue=args.sge_queue)
+    map_isoforms_runner(hq_fq=out_rep_fq, hq_sam=out_rep_sam,
+                        work_dir=op.join(out_dir, 'sge_map_rep_to_genome'),
+                        gmap_name=gmap_name, gmap_db=gmap_db, nproc=C.GMAP_NPROC,
+                        use_sge=args.use_sge, nchunks=args.sge_nodes, sge_queue=args.sge_queue)
     return out_rep_fq, out_rep_sam
 
 
@@ -360,6 +366,24 @@ def validate_human_isoforms(SMRTLinkIsoSeqFilesCls, post_mapping_to_genome_runne
     except Exception as e:
         log.warning("Could not validate with matchanot!")
 
+
+def collapse_to_reference_isoseq3(vfs, slfs, gmap_name, gmap_db, out_dir, args):
+    hq_sam = op.join(out_dir, "%s.sorted.sam" % op.basename(vfs.hq_isoforms_fq))
+    map_isoforms_runner(hq_fq=vfs.hq_isoforms_fq, hq_sam=hq_sam,
+                        gmap_name=gmap_name, gmap_db=gmap_db, nproc=C.GMAP_NPROC,
+                        work_dir=op.join(out_dir, 'sge_map_hq_to_genome'),
+                        use_sge=args.use_sge, nchunks=args.sge_nodes, sge_queue=args.sge_queue)
+#    c1 = 'isocollapse {hq_fasta} {o_sorted_sam} {transcriptset} {flnc_bam} {out_dir}/out && echo $?'.\
+#            format(hq_fasta=vfs.hq_isoforms_fa, o_sorted_sam=hq_sam, transcriptset=slfs.hq_isoforms_bam,
+#                    flnc_bae=slfs.isoseq_flnc.bam, out_prefix=vfs.collapse_to_sirv_dir + 'touse')
+    from isocollapse.tasks.collapse_mapped_isoforms import run_main as isocollapse_runner
+    isocollapse_runner(i_f=vfs.hq_isoforms_fqq, i_sam=hq_sam,
+                       i_transcript=slfs.hq_isoforms_transcriptset,
+                       i_flnc_bam=slfs.isoseq_flnc_bam,
+                       output_prefix, out_isoforms, out_gff, out_group, out_abundance, out_read_stat,
+                       min_aln_coverage, min_aln_identity, max_fuzzy_junction, allow_extra_5exon)
+    return
+
 def validate_sirv_isoforms(SMRTLinkIsoSeqFilesCls, post_mapping_to_genome_runner_f, args):
     """Collapse HQ isoforms to SIRV, get collapsed isoforms in fq and SAM.
     Compare collapsed isoforms against SIRV ground truth,
@@ -367,6 +391,10 @@ def validate_sirv_isoforms(SMRTLinkIsoSeqFilesCls, post_mapping_to_genome_runner
     """
     vfs = ValidationFiles(args.val_dir)
     slfs = SMRTLinkIsoSeqFilesCls(args.smrtlink_job_dir)
+
+    if SMRTLinkIsoSeqFilesCls == SMRTLinkIsoSeq3Files:
+        collapse_to_reference_isoseq3(vfs=vfs, slfs=slfs, gmap_name=args.sirv_gmap_name, gmap_db=args.gmap_db, out_dir=vfs.collapse_to_sirv_dir,args=args)
+        return
 
     # Collapse HQ isoforms fastq to SIRV and make representive isoforms, then map
     # representative isoforms to gmap reference, and sort output SAM (sorted_rep_sam).
@@ -513,8 +541,6 @@ def get_parser():
     return parser
 
 
-from .io import SMRTLinkIsoSeq2Files
-from pbtranscript2.mains.post_mapping_to_genome import post_mapping_to_genome_runner as post_mapping_to_genome_runner2
 
 def post_mapping_to_genome_runner_f(in_isoforms, in_sam, in_pickle,
             out_isoforms, out_gff, out_abundance, out_group, out_read_stat,
@@ -536,12 +562,16 @@ def get_cls_runner_from_args(smrtlink_job_dir):
     # figure out is this an IsoSeq job or an IsoSeq2 job?
     is_isoseq = op.exists(op.join(smrtlink_job_dir, 'tasks', 'pbtranscript.tasks.combine_cluster_bins-0'))
     is_isoseq2 = op.exists(op.join(smrtlink_job_dir, 'tasks', 'pbtranscript2tools.tasks.create_workspace-0'))
+    is_isoseq3 = op.exists(op.join(smrtlink_job_dir, 'tasks', 'isoseqs.tasks.charlie-0'))
     if is_isoseq:
-        log.info("Detected IsoSeq job {!r}.")
+        log.info("Detected IsoSeq job {!r}.".format(smrtlink_job_dir))
         return (SMRTLinkIsoSeqFiles, post_mapping_to_genome_runner)
     elif is_isoseq2:
-        log.info("Detected IsoSeq2 job {!r}.")
-        return (SMRTLinkIsoSeq2Files,  post_mapping_to_genome_runner_f)
+        log.info("Detected IsoSeq2 job {!r}.".format(smrtlink_job_dir))
+        return (SMRTLinkIsoSeq2Files, post_mapping_to_genome_runner_f)
+    elif is_isoseq3:
+        log.info("Detected IsoSeq3 job {!r}.".format(smrtlink_job_dir))
+        return (SMRTLinkIsoSeq3Files, post_mapping_to_genome_runner)
     else:
         raise ValueError("Job {!r} must be either IsoSeq or IsoSeq2.".format(smrtlink_job_dir))
 
