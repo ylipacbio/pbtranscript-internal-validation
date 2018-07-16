@@ -1,46 +1,33 @@
 SHELL = /bin/bash -e 
 
-all: check build install
+MY_NOSE_FLAGS?=-v -s
+MY_CRAM_FLAGS?=-v
+THISDIR:=$(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
-check:
-	pylint --errors-only pbtranscript_internal_validation/*.py
 
+test-fast: pylint
+
+wheel:
+	# This is basically a syntax check.
+	python setup.py bdist_wheel
 build:
-	python setup.py build --executable="/usr/bin/env python"
-
-bdist:
-	python setup.py build --executable="/usr/bin/env python"
-	python setup.py bdist --formats=egg
+	pip install -v --user --edit .
+	rm -f *.xml
 pylint:
 	pylint --errors-only pbtranscript_internal_validation/
 install:
 	python setup.py install
-
-develop:
-	python setup.py develop
-
 test:
 	# Unit tests
-	find tests/unit -name "*.py" |grep -v test_validate_nti.py | xargs nosetests
-	# End-to-end tests
-	#find tests/cram -name "*.t" | xargs cram
-
-slowtest:
-	nosetests -s tests/unit/test_validate_nti.py
-
-doc:
-	sphinx-apidoc -T -f -o doc src/ && cd doc && make html
-docs: doc
-
-clean: doc-clean
+	#find tests/unit -name "*.py" |grep -v test_validate_nti.py | xargs nosetests
+	nosetests -s tests/unit/test_functions.py
+#slowtest:
+#	nosetests -s tests/unit/test_validate_nti.py
+clean:
 	rm -rf dist/ build/ *.egg-info
 	rm -rf doc/_build
 	find . -name "*.pyc" | xargs rm -f
-	rm -rf dist/
-
-doc-clean:
-	rm -f doc/*.html
-
+	rm -rf dist/ LOCAL/
 pip-install:
 	@which pip > /dev/null
 	@pip freeze|grep 'pbtranscript-internal-validation=='>/dev/null \
@@ -50,5 +37,7 @@ pip-install:
 	@pip install --no-index \
           --install-option="--install-scripts=$(PREFIX)/bin" \
           ./
+push:
+	git push origin HEAD:feature/SE-1072-unify-isoseq-isoseq2-validation
 
-.PHONY: all build bdist install develop test doc clean pip-install
+.PHONY: all build install test-fast clean pip-install
