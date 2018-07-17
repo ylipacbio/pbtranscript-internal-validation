@@ -1,4 +1,6 @@
 pbcore >= 1.4.0
 pbcoretools >= 0.1.2
 pbcommand >= 0.3.12
+pbtranscript >= 1.1.2
+pbtranscript2 >= 0.1.1
 isocollapse >= 0.1.1
