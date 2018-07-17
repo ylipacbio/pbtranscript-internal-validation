@@ -15,13 +15,14 @@ ls -larth ${WHEELHOUSE}
 pip install --user --find-links=${WHEELHOUSE} --no-index pytest pytest-cov pylint cython
 
 
-ZLIB_CFLAGS=$(pkg-config zlib --cflags)
-ZLIB_LIBS=$(pkg-config zlib --libs)
-HTSLIB_CONFIGURE_OPTIONS="--disable-libcurl --disable-bz2 --disable-lzma" \
-  CFLAGS="-D_GNU_SOURCE ${ZLIB_CFLAGS}" \
-  LDFLAGS="${ZLIB_LIBS}" \
-  pip install -v --user --find-links=${WHEELHOUSE} --no-index 'pysam'
+#ZLIB_CFLAGS=$(pkg-config zlib --cflags)
+#ZLIB_LIBS=$(pkg-config zlib --libs)
+#HTSLIB_CONFIGURE_OPTIONS="--disable-libcurl --disable-bz2 --disable-lzma" \
+#  CFLAGS="-D_GNU_SOURCE ${ZLIB_CFLAGS}" \
+#  LDFLAGS="${ZLIB_LIBS}" \
+#  pip install -v --user --find-links=${WHEELHOUSE} --no-index 'pysam'
 #  pip install -v --user 'pysam==0.9.1.4'
+pip install -v --user pysam==0.13
 python -c 'import pysam.version; print pysam.version.__version__'
 python -c 'import pysam.cfaidx; print pysam.cfaidx' || python -c 'import pysam.libcfaidx; print pysam.libcfaidx'
 
@@ -74,11 +75,20 @@ else
     pip install -v --user --find-links=${WHEELHOUSE} --no-index pbtranscript2
 fi
 
+if [ -e $THISDIR/../isocollapse ] ; then
+    pushd ../isocollapse
+    pip install -v --user --find-links=${WHEELHOUSE} --no-index --no-deps --edit  .
+    popd
+else
+    pip install -v --user --find-links=${WHEELHOUSE} --no-index isocollapse
+fi
+
 python -c "import pbcore"
 python -c "import pbcoretools"
 python -c "import pbcommand"
 python -c "import pbtranscript"
 python -c "import pbtranscript2"
+python -c "import isocollapse"
 
 pip install -v --user --edit . 
 
