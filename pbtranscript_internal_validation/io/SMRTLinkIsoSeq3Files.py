@@ -24,6 +24,7 @@ class SMRTLinkIsoSeq3Files(object):
         self.pbscala_sh = f('../pbscala-job.sh')
         self.subreads_xml = get_subread_xml_from_job_path(root_dir)
         self.ccs_xml = f('pbcoretools.tasks.gather_ccsset-1', 'file.consensusreadset.xml')
+        self.ccs_report_json = f('tasks', 'pbreports.tasks.ccs_report-0', 'ccs_report.json')
 
     def export_isoseq_flnc_fa(self, isoseq_flnc_fa):
         bam2fasta(self.isoseq_flnc_bam,  isoseq_flnc_fa)

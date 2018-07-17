@@ -15,6 +15,8 @@ from pbtranscript2.independent.system import touch
 from .Utils import (consolidate_xml, json_to_attr_dict, get_subread_xml_from_job_path,
         reseq, coverage2str, subset_dict, m42coverage)
 from .io.SMRTLinkIsoSeq3Files import SMRTLinkIsoSeq3Files
+from .io.SMRTLinkIsoSeq2Files import SMRTLinkIsoSeq2Files
+from pbtranscript.io import SMRTLinkIsoSeqFiles
 
 FORMATTER = op.basename(__file__) + ':%(levelname)s:'+'%(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMATTER)
@@ -525,19 +527,19 @@ class ValidationRunner(ValidationFiles):
     def make_reports_from_SMRTLink_job(self, SMRTLinkIsoSeqFilesCls, smrtlink_job_dir):
         """Get reports from a SMRTLink job, including ccs report,
         classify report, cluster report, and write to self.validation_report_csv"""
-        if SMRTLinkIsoSeqFilesCls == SMRTLinkIsoSeq3Files:
-            return
         log.info("make reports from smrtlink job")
         sl_job = SMRTLinkIsoSeqFilesCls(smrtlink_job_dir)
-        reports_fn = [sl_job.ccs_report_json,
-                      sl_job.classify_report_json,
-                      sl_job.cluster_report_json]
 
         d = dict()
-        for report_fn in reports_fn:
-            print(report_fn)
-            for key, val in json_to_attr_dict(report_fn).iteritems():
-                d[key] = val
+        if SMRTLinkIsoSeqFilesCls in (SMRTLinkIsoSeq2Files, SMRTLinkIsoSeqFiles):
+            reports_fn = [sl_job.ccs_report_json,
+                          sl_job.classify_report_json,
+                          sl_job.cluster_report_json]
+
+            for report_fn in reports_fn:
+                print(report_fn)
+                for key, val in json_to_attr_dict(report_fn).iteritems():
+                    d[key] = val
 
         #write d to validation_report_csv
         with open(self.validation_report_csv, 'w') as writer:
