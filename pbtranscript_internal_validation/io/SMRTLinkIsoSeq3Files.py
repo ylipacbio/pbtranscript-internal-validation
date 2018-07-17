@@ -1,6 +1,7 @@
 from pbtranscript.Utils import execute, realpath, mkdir, rmpath
 import os.path as op
 import os
+from ..Utils import get_subread_xml_from_job_path
 
 def bam2fasta(i_bam, o_fasta):
     cmd = 'bam2fasta {0} -o {1} && gunzip {1}.fasta.gz && mv {1}.fasta {2}'.\
@@ -21,7 +22,7 @@ class SMRTLinkIsoSeq3Files(object):
         self.hq_isoforms_fq = f('pbcoretools.tasks.bam2fastq_transcripts-0', 'hq_transcripts.fastq')
         self.lq_isoforms_fq = f('pbcoretools.tasks.bam2fastq_transcripts-0', 'lq_transcripts.fastq')
         self.pbscala_sh = f('../pbscala-job.sh')
-        self.subreads_xml = [fn for fn in os.listdir(f('../entry-points')) if op.isfile(op.join(f('../entry-points/'), fn)) and fn.endswith('subreadset.xml')][0]
+        self.subreads_xml = get_subread_xml_from_job_path(root_dir)
         self.ccs_xml = f('pbcoretools.tasks.gather_ccsset-1', 'file.consensusreadset.xml')
 
     def export_isoseq_flnc_fa(self, isoseq_flnc_fa):
