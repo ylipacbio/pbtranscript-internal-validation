@@ -3,6 +3,7 @@
 """Access data files in SMRTLink IsoSeq job"""
 
 import logging
+import os
 import os.path as op
 import json
 import re
@@ -102,7 +103,13 @@ def get_subread_xml_from_job_path(job_path):
                 idx = content.find(key)
                 return content[idx+len(key):].split(' ')[0].strip()
         except Exception as e:
-            raise ValueError("Could not find subread xml from smrtlink job path %s" % job_path)
+            try:
+                d = op.join(job_path, 'entry-points')
+                assert op.exists(d)
+                return [op.join(d, f) for f in os.listdir(d)
+                        if op.isfile(op.join(d, f)) and f.endswith('subreadset.xml')][0]
+            except Exception as e:
+                raise ValueError("Could not find subread xml from smrtlink job path %s" % job_path)
 
 def reseq(fa_fn, ref_fn, out_m4, nproc=16):
     """Resequencing, output m4"""

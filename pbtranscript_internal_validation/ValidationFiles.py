@@ -15,6 +15,8 @@ from pbtranscript2.independent.system import touch
 from .Utils import (consolidate_xml, json_to_attr_dict, get_subread_xml_from_job_path,
         reseq, coverage2str, subset_dict, m42coverage)
 from .io.SMRTLinkIsoSeq3Files import SMRTLinkIsoSeq3Files
+from .io.SMRTLinkIsoSeq2Files import SMRTLinkIsoSeq2Files
+from pbtranscript.io import SMRTLinkIsoSeqFiles
 
 FORMATTER = op.basename(__file__) + ':%(levelname)s:'+'%(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMATTER)
@@ -47,16 +49,14 @@ def make_polymerase_readlength_csv(subreads_xml, csv_fn):
         # dict: movie id --> movie name
         movie_id_to_name = {movie_id:movie_name for movie_name, movie_id in ds.movieIds.iteritems()}
 
-        starts = defaultdict(lambda: 99999)
         ends = defaultdict(lambda: 0)
-        for movie_id, zmw, start, end in zip(ds.index['qId'], ds.index['holeNumber'], ds.index['qStart'], ds.index['qEnd']):
-            starts[(movie_id, zmw)] = min(starts,  starts[(movie_id, zmw)])
+        for movie_id, zmw,  end in zip(ds.index['qId'], ds.index['holeNumber'], ds.index['qEnd']):
             ends[(movie_id, zmw)] = max(end,  ends[(movie_id, zmw)])
 
         writer = open(csv_fn, 'w')
         writer.write("'name'\t'readlength'\n")
         for movie_id, zmw in sorted(ends.keys()):
-            writer.write("%s/%s\t%s\n" % (movie_id_to_name[movie_id], zmw, ends[(movie_id, zmw)]-starts[(movie_id, zmw)]))
+            writer.write("%s/%s\t%s\n" % (movie_id_to_name[movie_id], zmw, ends[(movie_id, zmw)]))
         writer.close()
     except Exception as e:
         log.warning("Could not obtain polymerase read length! %s", str(e))
@@ -419,9 +419,9 @@ class ValidationRunner(ValidationFiles):
         #symlink smrtlink_job_dir and files to validation dir
         self.ln_files_from_SMRTLink_job(SMRTLinkIsoSeqFilesCls, smrtlink_job_dir)
 
-        #if make_reports:
-        #    self.make_reports_from_SMRTLink_job(SMRTLinkIsoSeqFilesCls, smrtlink_job_dir)
-        #    self.make_readlength_csvs()
+        if make_reports:
+            self.make_reports_from_SMRTLink_job(SMRTLinkIsoSeqFilesCls, smrtlink_job_dir)
+            self.make_readlength_csvs()
 
     def make_readlength_csvs(self):
         """Make all read length csv files."""
@@ -527,19 +527,19 @@ class ValidationRunner(ValidationFiles):
     def make_reports_from_SMRTLink_job(self, SMRTLinkIsoSeqFilesCls, smrtlink_job_dir):
         """Get reports from a SMRTLink job, including ccs report,
         classify report, cluster report, and write to self.validation_report_csv"""
-        if SMRTLinkIsoSeqFilesCls == SMRTLinkIsoSeq3Files:
-            return
         log.info("make reports from smrtlink job")
         sl_job = SMRTLinkIsoSeqFilesCls(smrtlink_job_dir)
-        reports_fn = [sl_job.ccs_report_json,
-                      sl_job.classify_report_json,
-                      sl_job.cluster_report_json]
 
         d = dict()
-        for report_fn in reports_fn:
-            print(report_fn)
-            for key, val in json_to_attr_dict(report_fn).iteritems():
-                d[key] = val
+        if SMRTLinkIsoSeqFilesCls in (SMRTLinkIsoSeq2Files, SMRTLinkIsoSeqFiles):
+            reports_fn = [sl_job.ccs_report_json,
+                          sl_job.classify_report_json,
+                          sl_job.cluster_report_json]
+
+            for report_fn in reports_fn:
+                print(report_fn)
+                for key, val in json_to_attr_dict(report_fn).iteritems():
+                    d[key] = val
 
         #write d to validation_report_csv
         with open(self.validation_report_csv, 'w') as writer:
