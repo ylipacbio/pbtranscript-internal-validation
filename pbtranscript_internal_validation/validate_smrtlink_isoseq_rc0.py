@@ -394,7 +394,26 @@ def collapse_to_reference_isoseq3(vfs, slfs, gmap_name, gmap_db, out_dir,
                         work_dir=op.join(out_dir, 'sge_map_rep_to_genome'),
                         gmap_name=gmap_name, gmap_db=gmap_db, nproc=C.GMAP_NPROC,
                         use_sge=args.use_sge, nchunks=args.sge_nodes, sge_queue=args.sge_queue)
+
+    # make a copy of original abundance file and override out_abundance file
+    out_abundance_original = out_abundance + '.original.txt'
+    execute('cp {} {}'.format(out_abundance, out_abundance_original))
+    convert_abundance_file(out_abundance_original, out_abundance)
     return (out_rep_fq, out_rep_sam)
+
+
+def convert_abundance_file(in_abundance, out_abundance):
+    """Convert isoseq abundance file to isoseq3 abundance file"""
+    from isocollapse.io.AbundanceIO import AbundanceReader as AbundanceReader3
+    from pbtranscript.io import AbundanceWriter, AbundanceRecord
+    with AbundanceReader3(in_abundance) as reader:
+        with AbundanceWriter(out_abundance, None, reader.total_fl, 0, 0) as writer:
+            for r in reader:
+                convert_r = AbundanceRecord(pbid=r.pbid, count_fl=r.count_fl,
+                                            count_nfl=0, count_nfl_amb=0,
+                                            norm_fl=r.norm_fl, norm_nfl=0, norm_nfl_amb=0)
+                writer.writeRecord(convert_r)
+
 
 def validate_sirv_isoforms(SMRTLinkIsoSeqFilesCls, post_mapping_to_genome_runner_f, args):
     """Collapse HQ isoforms to SIRV, get collapsed isoforms in fq and SAM.
@@ -404,6 +423,10 @@ def validate_sirv_isoforms(SMRTLinkIsoSeqFilesCls, post_mapping_to_genome_runner
     vfs = ValidationFiles(args.val_dir)
     slfs = SMRTLinkIsoSeqFilesCls(args.smrtlink_job_dir)
 
+    # Collapse HQ isoforms fastq to SIRV and make representive isoforms, then map
+    # representative isoforms to gmap reference, and sort output SAM (sorted_rep_sam).
+    log.info("Collapsing HQ isoforms to SIRV, and mapping representative collapsed isoforms to SIRV.")
+    # Collapse HQ isoforms fastq to SIRV
     if SMRTLinkIsoSeqFilesCls == SMRTLinkIsoSeq3Files:
         collapse_to_reference_isoseq3(vfs=vfs, slfs=slfs,
             gmap_name=args.sirv_gmap_name, gmap_db=args.gmap_db,
@@ -411,18 +434,13 @@ def validate_sirv_isoforms(SMRTLinkIsoSeqFilesCls, post_mapping_to_genome_runner
             out_rep_fq=vfs.collapsed_to_sirv_rep_fq, out_rep_sam=vfs.collapsed_to_sirv_rep_sam,
             out_gff=vfs.collapsed_to_sirv_gff, out_abundance=vfs.collapsed_to_sirv_abundance,
             out_group=vfs.collapsed_to_sirv_group, args=args)
-        return
-
-    # Collapse HQ isoforms fastq to SIRV and make representive isoforms, then map
-    # representative isoforms to gmap reference, and sort output SAM (sorted_rep_sam).
-    log.info("Collapsing HQ isoforms to SIRV, and mapping representative collapsed isoforms to SIRV.")
-    # Collapse HQ isoforms fastq to SIRV
-    collapse_to_reference(post_mapping_to_genome_runner_f=post_mapping_to_genome_runner_f,
-        hq_fq=vfs.hq_isoforms_fq, gmap_db=args.gmap_db, gmap_name=args.sirv_gmap_name,
-        hq_lq_prefix_pickle=slfs.hq_lq_prefix_pickle, out_dir=vfs.collapse_to_sirv_dir,
-        out_rep_fq=vfs.collapsed_to_sirv_rep_fq, out_rep_sam=vfs.collapsed_to_sirv_rep_sam,
-        out_gff=vfs.collapsed_to_sirv_gff, out_abundance=vfs.collapsed_to_sirv_abundance,
-        out_group=vfs.collapsed_to_sirv_group, args=args)
+    else:
+        collapse_to_reference(post_mapping_to_genome_runner_f=post_mapping_to_genome_runner_f,
+            hq_fq=vfs.hq_isoforms_fq, gmap_db=args.gmap_db, gmap_name=args.sirv_gmap_name,
+            hq_lq_prefix_pickle=slfs.hq_lq_prefix_pickle, out_dir=vfs.collapse_to_sirv_dir,
+            out_rep_fq=vfs.collapsed_to_sirv_rep_fq, out_rep_sam=vfs.collapsed_to_sirv_rep_sam,
+            out_gff=vfs.collapsed_to_sirv_gff, out_abundance=vfs.collapsed_to_sirv_abundance,
+            out_group=vfs.collapsed_to_sirv_group, args=args)
 
     # make a chain config
     mkdir(vfs.chain_sample_dir)
@@ -464,8 +482,11 @@ def validate_sirv_isoforms(SMRTLinkIsoSeqFilesCls, post_mapping_to_genome_runner
          'reseq_to_sirv.isoseq_flnc': (vfs.isoseq_flnc_fa, vfs.isoseq_flnc_sirv_m4)}
     for name in d.keys():
         fa_fn, m4_fn = d[name][0], d[name][1]
-        reseq(fa_fn, args.sirv_transcripts_fa, m4_fn)
-        n_mapped_reads, n_mapped_refs = summarize_reseq(m4_fn)
+        if os.stat(fa_fn).st_size != 0:
+            reseq(fa_fn, args.sirv_transcripts_fa, m4_fn)
+            n_mapped_reads, n_mapped_refs = summarize_reseq(m4_fn)
+        else:
+            n_mapped_reads, n_mapped_refs = 0, 0
         desc_val_tuples.append(('%s_n_mapped_reads' % name, n_mapped_reads))
         desc_val_tuples.append(('%s_n_mapped_refs' % name, n_mapped_refs))
 
