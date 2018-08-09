@@ -27,8 +27,8 @@ class SMRTLinkIsoSeq3Files(object):
 
     @property
     def isoseq_flnc_bam(self):
-        f0 = f('isoseq3.tasks.cluster-0', 'unpolished.flnc.bam')
-        f1 = f('isoseq3.tasks.refine-0', 'flnc.bam')
+        f0 = op.join(self.root_dir, 'tasks', 'isoseq3.tasks.cluster-0', 'unpolished.flnc.bam')
+        f1 = op.join(self.root_dir, 'tasks', 'isoseq3.tasks.refine-0', 'flnc.bam')
         return f0 if op.exists(f0) else f1 if op.exists(f1) else None
 
     def export_isoseq_flnc_fa(self, isoseq_flnc_fa):
