@@ -5,18 +5,13 @@ from __future__ import print_function
 
 import logging
 import os.path as op
-import shutil
-import json
 from collections import defaultdict
 from pbcore.io import ContigSet, FastaReader, FastqReader
 from pbtranscript.io import ContigSetReaderWrapper
-from pbtranscript.Utils import realpath, rmpath, ln, mkdir, execute
-from pbtranscript2.independent.system import touch
+from isocollapse.independent.system import realpath, rmpath, lnabs, mkdir, execute, touch
 from .Utils import (consolidate_xml, json_to_attr_dict, get_subread_xml_from_job_path,
-        reseq, coverage2str, subset_dict, m42coverage)
+                    reseq, coverage2str, subset_dict, m42coverage)
 from .io.SMRTLinkIsoSeq3Files import SMRTLinkIsoSeq3Files
-from .io.SMRTLinkIsoSeq2Files import SMRTLinkIsoSeq2Files
-from pbtranscript.io import SMRTLinkIsoSeqFiles
 
 FORMATTER = op.basename(__file__) + ':%(levelname)s:'+'%(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMATTER)
@@ -47,7 +42,7 @@ def make_polymerase_readlength_csv(subreads_xml, csv_fn):
         # Assuming all reads from one zmw are grouped
         ds = SubreadSet(subreads_xml)
         # dict: movie id --> movie name
-        movie_id_to_name = {movie_id:movie_name for movie_name, movie_id in ds.movieIds.iteritems()}
+        movie_id_to_name = {movie_id: movie_name for movie_name, movie_id in ds.movieIds.iteritems()}
 
         ends = defaultdict(lambda: 0)
         for movie_id, zmw,  end in zip(ds.index['qId'], ds.index['holeNumber'], ds.index['qEnd']):
@@ -146,11 +141,6 @@ class ValidationFiles(object):
         return op.join(self.csv_dir, "flnc_readlength.csv")
 
     @property
-    def nfl_readlength_csv(self):
-        """file path to NFL read length csv"""
-        return op.join(self.csv_dir, "nfl_readlength.csv")
-
-    @property
     def consensus_isoforms_readlength_csv(self):
         """file path to consensus isoforms"""
         return op.join(self.csv_dir, "consensus_isoforms_readlength.csv")
@@ -181,19 +171,9 @@ class ValidationFiles(object):
         return op.join(self.fasta_dir, "isoseq_flnc.fasta")
 
     @property
-    def isoseq_nfl_fa(self):
-        """file path to concatenated isoseq_nfl.fasta"""
-        return op.join(self.fasta_dir, "isoseq_nfl.fasta")
-
-    @property
     def consensus_isoforms_fa(self):
         """file path to consensus_isoforms.fasta"""
         return op.join(self.fasta_dir, "consensus_isoforms.fasta")
-
-    @property
-    def hq_isoforms_fa(self):
-        """file path to hq isoforms.fasta"""
-        return op.join(self.fasta_dir, "hq_isoforms.fasta")
 
     @property
     def reseq_to_sirv_dir(self):
@@ -210,6 +190,11 @@ class ValidationFiles(object):
     @property
     def isoseq_flnc_sirv_m4(self):
         return op.join(self.reseq_to_sirv_dir, "isoseq_flnc.sirv.m4")
+
+    @property
+    def hq_isoforms_fa(self):
+        """file path to hq isoforms.fasta"""
+        return op.join(self.fasta_dir, "hq_isoforms.fasta")
 
     @property
     def hq_isoforms_fq(self):
@@ -335,6 +320,7 @@ class ValidationRunner(ValidationFiles):
         super(ValidationRunner, self).__init__(root_dir=root_dir)
         self.smrtlink_job_dir = op.join(smrtlink_job_dir)
         self.subreads_xml = get_subread_xml_from_job_path(self.smrtlink_job_dir)
+        self.sl_job = SMRTLinkIsoSeq3Files(self.smrtlink_job_dir)
 
     @property
     def all_files(self):
@@ -357,7 +343,6 @@ class ValidationRunner(ValidationFiles):
             ("lq_readlength_csv", self.lq_readlength_csv),
 
             ("isoseq_flnc_fasta", self.isoseq_flnc_fa),
-            ("isoseq_nfl_fasta", self.isoseq_nfl_fa),
             ("consensus_isoforms_fasta", self.consensus_isoforms_fa),
             ("hq_isoforms_fasta", self.hq_isoforms_fa)
         ]
@@ -393,14 +378,14 @@ class ValidationRunner(ValidationFiles):
     def ln_gencode_gtf(self, gencode_gtf):
         """Make link of gencode_gtf"""
         log.info("Making soft link of gencode annotation gtf")
-        ln(gencode_gtf, self.gencode_gtf)
+        lnabs(gencode_gtf, self.gencode_gtf)
 
     def ln_sirv_truth_dir(self, sirv_truth_dir):
         """Make a link of sirv ground truth dir"""
         log.info("Making soft link of sirv ground truth dir")
-        ln(sirv_truth_dir, self.sirv_truth_dir)
+        lnabs(sirv_truth_dir, self.sirv_truth_dir)
 
-    def make_all_files_from_SMRTLink_job(self, SMRTLinkIsoSeqFilesCls, make_readlength=True, make_reports=True):
+    def make_all_files_from_SMRTLink_job(self,  make_readlength=True):
         """Make all data files from a smrtlink job, including
         * consolidate flnc and nfl xml files to fasta
         * collect ccs, classify, cluster reports from sl job and make validation_report_csv
@@ -414,14 +399,11 @@ class ValidationRunner(ValidationFiles):
         mkdir(self.reseq_to_hg_dir)
 
         smrtlink_job_dir = self.smrtlink_job_dir
-        #TODO enable consolidate_xml
-        self.consolidate_xml_from_SMRTLink_job(SMRTLinkIsoSeqFilesCls, smrtlink_job_dir)
-        #symlink smrtlink_job_dir and files to validation dir
-        self.ln_files_from_SMRTLink_job(SMRTLinkIsoSeqFilesCls, smrtlink_job_dir)
+        consolidate_xml(src=self.sl_job.flnc_bam, dst=self.isoseq_flnc_fa)
 
-        if make_reports:
-            self.make_reports_from_SMRTLink_job(SMRTLinkIsoSeqFilesCls, smrtlink_job_dir)
-            self.make_readlength_csvs()
+        # symlink smrtlink_job_dir and files to validation dir
+        self.ln_files_from_SMRTLink_job()
+        self.make_readlength_csvs()
 
     def make_readlength_csvs(self):
         """Make all read length csv files."""
@@ -429,7 +411,6 @@ class ValidationRunner(ValidationFiles):
         z = [
             (self.ccs_fa, self.ccs_readlength_csv),
             (self.isoseq_flnc_fa, self.flnc_readlength_csv),
-            (self.isoseq_nfl_fa, self.nfl_readlength_csv),
             (self.hq_isoforms_fa, self.hq_readlength_csv),
             (self.lq_isoforms_fa, self.lq_readlength_csv),
             (self.consensus_isoforms_fa, self.consensus_isoforms_readlength_csv)
@@ -453,99 +434,24 @@ class ValidationRunner(ValidationFiles):
         make_readlength_csv(fasta_fn=self.collapsed_to_hg_rep_fq,
                             csv_fn=self.collapsed_to_hg_rep_readlength_csv)
 
-    def consolidate_xml_from_SMRTLink_job(self, SMRTLinkIsoSeqFilesCls, smrtlink_job_dir):
-        """Consolidate xml files from SMRTLink job dir"""
-        log.info("consolidate xml files from smrtlink job")
-        sl_job = SMRTLinkIsoSeqFilesCls(smrtlink_job_dir)
-        if SMRTLinkIsoSeqFilesCls == SMRTLinkIsoSeq3Files:
-            sl_job.export_isoseq_flnc_fa(isoseq_flnc_fa=self.isoseq_flnc_fa)
-            touch(self.isoseq_nfl_fa)
-            return
-
-        for f in (self.isoseq_flnc_fa, self.isoseq_nfl_fa):
-            if op.exists(f):
-                rmpath(f)
-
-        try:
-            execute('cp {} {}'.format(sl_job.isoseq_flnc_fa, self.isoseq_flnc_fa))
-            execute('cp {} {}'.format(sl_job.isoseq_nfl_fa, self.isoseq_nfl_fa))
-        except Exception:
-            try:
-                for i in range(1, 1000):
-                    d = op.join(sl_job.tasks_dir, 'pbtranscript.tasks.classify-%s' % i)
-                    if not op.exists(d):
-                        break
-                    flnc_fa = op.join(d, 'isoseq_flnc.fasta')
-                    nfl_fa = op.join(d, 'isoseq_nfl.fasta')
-                    execute('cat %s >> %s' % (flnc_fa, self.isoseq_flnc_fa))
-                    execute('cat %s >> %s' % (nfl_fa, self.isoseq_nfl_fa))
-            except Exception:
-                # Failed to cat fasta files, has to use consolidate_xml which is 10X slower
-                # Consolidate isoseq_flnc.fasta
-                consolidate_xml(src=sl_job.isoseq_flnc_ds, dst=self.isoseq_flnc_fa)
-
-                # Consolidate isoseq_nfl.fasta
-                consolidate_xml(src=sl_job.isoseq_nfl_ds, dst=self.isoseq_nfl_fa)
-
-    def ln_files_from_SMRTLink_job(self, SMRTLinkIsoSeqFilesCls, smrtlink_job_dir):
+    def ln_files_from_SMRTLink_job(self):
         """Make soft links to existing isoseq output fasta|fastq files."""
         log.info("make soft links from smrtlink job")
-        sl_job = SMRTLinkIsoSeqFilesCls(smrtlink_job_dir)
         # Make a link of smrtlink dir
-        ln(smrtlink_job_dir, op.join(self.root_dir, op.basename(sl_job.root_dir)))
+        lnabs(self.smrtlink_job_dir, op.join(self.root_dir, op.basename(self.sl_job.root_dir)))
 
         # Make a link of consensus isoforms fa, hq|lq isoforms fa|fq, isoseq_flnc.fasta
-        ln(src=sl_job.hq_isoforms_fa, dst=self.hq_isoforms_fa)
-        ln(src=sl_job.hq_isoforms_fq, dst=self.hq_isoforms_fq)
-        ln(src=sl_job.lq_isoforms_fa, dst=self.lq_isoforms_fa)
-        ln(src=sl_job.lq_isoforms_fq, dst=self.lq_isoforms_fq)
+        lnabs(src=self.sl_job.hq_isoforms_fa, dst=self.hq_isoforms_fa)
+        lnabs(src=self.sl_job.hq_isoforms_fq, dst=self.hq_isoforms_fq)
+        lnabs(src=self.sl_job.lq_isoforms_fa, dst=self.lq_isoforms_fa)
+        lnabs(src=self.sl_job.lq_isoforms_fq, dst=self.lq_isoforms_fq)
 
-        ccsxml = op.join(sl_job.root_dir, 'tasks/pbcoretools.tasks.gather_ccsset-1/file.consensusreadset.xml')
-        if op.exists(ccsxml):
-            execute('rm -f {dst}.fasta && bam2fasta {src} -o {dst} && gunzip {dst}.fasta.gz'.format(src=ccsxml, dst=op.join(op.dirname(self.ccs_fa), 'ccs')))
+        if op.exists(self.sl_job.ccs_xml):
+            consolidate_xml(self.sl_job.ccs_xml, self.ccs_fa)
         else:
-            src_ccs_fa = op.join(op.dirname(sl_job.ccs_fa_gz), 'ccs.fasta')
-            if op.exists(src_ccs_fa):
-                ln(src=src_ccs_fa, dst=self.ccs_fa)
-            elif op.exists(sl_job.ccs_fa_gz):
-                dst_ccs_fa = op.join(op.dirname(self.ccs_fa), 'ccs.fasta')
-                dst_ccs_gz = op.join(op.dirname(self.ccs_fa), 'ccs.fasta.gz')
-                execute('rm -f %s && cp %s %s && gunzip %s' % (dst_ccs_fa, sl_job.ccs_fa_gz, dst_ccs_gz, dst_ccs_gz))
-            elif op.exists(src_ccs_fa+'.zip'):
-                dst_ccs_fa = op.join(op.dirname(self.ccs_fa), 'ccs.fasta')
-                dst_ccs_zip = op.join(op.dirname(self.ccs_fa), 'ccs.fasta.zip')
-                execute('rm -f %s && cp %s %s && unzip %s' % (dst_ccs_fa, src_ccs_fa+'.zip', dst_ccs_zip, dst_ccs_zip))
-            else:
-                raise IOError("Could neither find %s or %s" % (src_ccs_fa, sl_job.ccs_fa_gz))
+            raise IOError("Could neither find {}".format(self.sl_job.ccs_xml))
 
-        if SMRTLinkIsoSeqFilesCls == SMRTLinkIsoSeq3Files:
-            sl_job.export_unpolished_fa(unpolished_fa=self.consensus_isoforms_fa)
-            return
-        else:
-            ln(src=sl_job.consensus_isoforms_fa, dst=self.consensus_isoforms_fa)
-
-    def make_reports_from_SMRTLink_job(self, SMRTLinkIsoSeqFilesCls, smrtlink_job_dir):
-        """Get reports from a SMRTLink job, including ccs report,
-        classify report, cluster report, and write to self.validation_report_csv"""
-        log.info("make reports from smrtlink job")
-        sl_job = SMRTLinkIsoSeqFilesCls(smrtlink_job_dir)
-
-        d = dict()
-        if SMRTLinkIsoSeqFilesCls in (SMRTLinkIsoSeq2Files, SMRTLinkIsoSeqFiles):
-            reports_fn = [sl_job.ccs_report_json,
-                          sl_job.classify_report_json,
-                          sl_job.cluster_report_json]
-
-            for report_fn in reports_fn:
-                print(report_fn)
-                for key, val in json_to_attr_dict(report_fn).iteritems():
-                    d[key] = val
-
-        #write d to validation_report_csv
-        with open(self.validation_report_csv, 'w') as writer:
-            writer.write("name\tvalue\n")
-            for key in sorted(d.keys()):#d.iteritems():
-                writer.write("%s\t%s\n" % (key, d[key]))
+        self.sl_job.export_unpolished_fa(unpolished_fa=self.consensus_isoforms_fa)
 
     def reseq_to_human(self, target_fa, selected_transcripts):
         """Resequence FLNC and HQ isoforms to human transcripts"""
@@ -555,22 +461,16 @@ class ValidationRunner(ValidationFiles):
         for query_fa, target_fa, out_m4, out_csv in _files:
             reseq(fa_fn=query_fa, ref_fn=target_fa, out_m4=out_m4)
             with open(out_csv, 'w') as writer:
-                 writer.write(coverage2str(coverage_d=subset_dict(d=m42coverage(out_m4), selected_keys=selected_transcripts)))
+                writer.write(coverage2str(coverage_d=subset_dict(
+                    d=m42coverage(out_m4), selected_keys=selected_transcripts)))
 
-    def make_readme_txt(self, args, collapse_to_human=False, reseq_to_human=False, no_sirv=True):
+    def make_readme_txt(self, args):
         """Write args and data files to README file."""
         with open(self.readme_txt, 'w') as writer:
             log.info("args=%s\n", args)
             writer.write("# Created by pbtranscript-internal-validation.ValidationRunner.make_readme_txt()\n")
             writer.write("args=%s\n\n" % args)
 
-            files = self.common_files
-            if collapse_to_human:
-                files = files + self.collapse_human_files
-            elif reseq_to_human:
-                files = files + self.reseq_human_files
-            elif not no_sirv:
-                files = files + self.sirv_files
-
+            files = self.common_files + self.collapse_human_files + self.reseq_human_files + self.sirv_files
             for desc, fn in files:
                 writer.write("%s=%s\n" % (desc, fn))

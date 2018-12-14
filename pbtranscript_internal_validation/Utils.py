@@ -9,8 +9,7 @@ import json
 import re
 from collections import defaultdict
 from pbcore.io import ContigSet, FastaWriter, FastqWriter
-from pbcore.util.Process import backticks
-from pbtranscript.Utils import execute
+from isocollapse.independent.system import execute, realpath, mv, backticks
 from pbtranscript.io import BLASRM4Reader
 
 log = logging.getLogger(__file__)
@@ -29,19 +28,36 @@ __all__ = [
 ]
 
 
+def _bam2fastx(exe, src, dst):
+    # generate flnc.fasta from flnc.bam
+    tmp = dst + 'tmp'
+    cmd = 'rm -f {dst} && {exe} {src} -o {tmp} && gunzip {tmp}.fasta.gz && mv {tmp}.fasta {dst}'.format(
+    dst=dst, src=src, tmp=tmp)
+    execute(cmd)
+
+
 def consolidate_xml(src, dst):
-    """Convert input dataset to output fasta|fastq"""
-    w = None
-    if dst.endswith(".fa") or dst.endswith(".fasta"):
-        w = FastaWriter(dst)
-        for r in ContigSet(src):
-            w.writeRecord(r)
-        w.close()
+    """Convert input contigset or subreadset/ccs/transcriptset/alignmentset to fasta|fastq"""
+    def _contigset2fastx(cls, src, dst):
+        with cls(dst) as writer:
+            for r in ContigSet(src):
+                writer.writeRecord(r)
+
+    def _convertible_to_bam(s):
+        suffices = ['bam', 'alignmentset.xml', 'subreadset.xml', 'consensusreadset.xml',
+                    'transcriptset.xml']
+        return any([s.endswith(suffix) for suffix in suffices])
+
+    if dst.endswith('.fa') or dst.endswith('.fasta'):
+        if _convertible_to_bam(src):
+            _bam2fastx('bam2fasta', src, dst)
+        else:
+            _contigset2fastx(FastaWriter, src, dst)
     elif dst.endswith(".fq") or dst.endswith(".fastq"):
-        w = FastqWriter(dst)
-        for r in ContigSet(src):
-            w.writeRecord(r)
-        w.close()
+        if _convertible_to_bam(src):
+            _bam2fastx('bam2fastq', src, dst)
+        else:
+            _contigset2fastx(FastqWriter, src, dst)
     else:
         raise ValueError("Output file %s must be either fasta or fastq", dst)
 
@@ -133,3 +149,29 @@ def coverage2str(coverage_d):
     header = 'transcript\tcoverage'
     lines = ['\t'.join([str(transcript), str(coverage)]) for transcript, coverage in coverage_d.items()]
     return '\n'.join([header] + lines)
+
+
+def filter_sam_by_targets(in_sam, targets, out_sam, filtered_sam):
+    """ Read alignments in in_sam, copy alignments with targe name in targets to out_sam,
+    write other alignments to filtered_sam."""
+    log.info("Writing alignments mapping to %r in %s", targets, out_sam)
+    log.info("Writing alignments not mapping to %r in %s", targets, filtered_sam)
+    out_writer = open(out_sam, 'w')
+    filtered_writer = open(filtered_sam, 'w')
+    for line in open(in_sam, 'r'):
+        if line.startswith('#') or line.startswith('@'):
+            # copy header to both out_sam and filtered_sam
+            out_writer.write(line)
+            filtered_writer.write(line)
+        else:
+            if len(line.strip()) == 0:
+                continue
+            else:
+                target = line.split('\t')[2].strip()
+                if target in targets:
+                    out_writer.write(line)
+                else:
+                    filtered_writer.write(line)
+    out_writer.close()
+    filtered_writer.close()
+

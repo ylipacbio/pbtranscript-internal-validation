@@ -1,16 +1,12 @@
-from pbtranscript.Utils import execute, realpath, mkdir, rmpath
 import os.path as op
-import os
-from ..Utils import get_subread_xml_from_job_path
+from isocollapse.independent.system import execute, realpath, mkdir, rmpath
+from ..Utils import get_subread_xml_from_job_path, _bam2fastx
 
-def bam2fasta(i_bam, o_fasta):
-    cmd = 'bam2fasta {0} -o {1} && gunzip {1}.fasta.gz && mv {1}.fasta {2}'.\
-        format(i_bam, o_fasta + '.tmp', o_fasta)
-    execute(cmd)
 
 class SMRTLinkIsoSeq3Files(object):
     def __init__(self, root_dir):
         self.root_dir = realpath(root_dir)
+
         def f(*args):
             return op.join(self.root_dir, 'tasks', *args)
         self.polished_bam = f('pbcoretools.tasks.gather_transcripts-1', 'file.transcriptset.xml')
@@ -25,14 +21,16 @@ class SMRTLinkIsoSeq3Files(object):
         self.ccs_xml = f('pbcoretools.tasks.gather_ccsset-1', 'file.consensusreadset.xml')
         self.ccs_report_json = f('tasks', 'pbreports.tasks.ccs_report-0', 'ccs_report.json')
 
+        self.hq_transcript_ds = f('tasks', 'pbcoretools.tasks.consolidate_transcripts-0',
+                                  'combined.hq.transcriptset.xml')  # HQ transcriptset
+        self.transcript_ds = f('tasks', 'pbcoretools.tasks.gather_transcripts-1',
+                               'file.transcriptset.xml')  # all transcriptset
+
     @property
-    def isoseq_flnc_bam(self):
+    def flnc_bam(self):
         f0 = op.join(self.root_dir, 'tasks', 'isoseq3.tasks.cluster-0', 'unpolished.flnc.bam')
         f1 = op.join(self.root_dir, 'tasks', 'isoseq3.tasks.refine-0', 'flnc.bam')
         return f0 if op.exists(f0) else f1 if op.exists(f1) else None
 
-    def export_isoseq_flnc_fa(self, isoseq_flnc_fa):
-        bam2fasta(self.isoseq_flnc_bam,  isoseq_flnc_fa)
-
     def export_unpolished_fa(self, unpolished_fa):
-        bam2fasta(self.unpolished_bam,  unpolished_fa)
+        _bam2fastx('bam2fasta', self.unpolished_bam,  unpolished_fa)

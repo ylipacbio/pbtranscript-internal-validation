@@ -1,6 +1,10 @@
-Update:
-    * `validate_smrtlink_isoseq_rc0.py` validates both IsoSeq and IsoSeq2 jobs.
+Update Dec 14 2018:
+    * remove support to IsoSeq1 and IsoSeq2 jobs, ONLY support IsoSeq3 in Kiwi and EA release.
+    * remove pitchfork install
+    * bump version to 4.0.0
 
+Update Nov 11 2017:
+    * add `validate_smrtlink_isoseq_rc0.py` validates both IsoSeq and IsoSeq2 jobs.
 
 Package: 
 
@@ -16,18 +20,10 @@ Description:
 INSTALLATION using pip:
 
     * `make pip-install`
-
-    
-INSTALLATION from pitchfork:
-
-    * cd pitchfork
-    * `make isoseq-core`
-    * `make isoseq-validation`
-
+   
 
 INSTALLATION:
 
-    * REQUIREMENT: pbtranscript must be installed
     * `python setup.py install --prefix=PATH_TO_YOUR_BUILD`
 
 
@@ -40,4 +36,3 @@ Usage:
 Document:
 
     * http://confluence.nanofluidics.com:8090/display/~yli/IsoSeq+Validation+and+Training
-

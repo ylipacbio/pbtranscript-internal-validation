@@ -6,7 +6,7 @@ import sys
 import numpy
 
 __author__ = "etseng|yli@pacificbiosciences.com"
-version = "3.0.0"
+version = "4.0.0"
 
 if 'setuptools.extension' in sys.modules:
     m = sys.modules['setuptools.extension']
@@ -36,6 +36,7 @@ def run_cmd(cmd):
                          shell=True)
     return p.stdin, p.stdout
 
+
 def check_program(program):
     import re
     try:
@@ -57,21 +58,17 @@ def exit_if_not_installed(program):
         sys.exit(1)
 
 
-if ("install" in sys.argv):
-    exit_if_not_installed("pbtranscript")
-
 setup(
-    name = 'pbtranscript_internal_validation',
+    name='pbtranscript_internal_validation',
     version=version,
     author='Pacific Biosciences',
     author_email='devnet@pacificbiosciences.com',
     license='LICENSE.txt',
-    ext_modules = [],
+    ext_modules=[],
     include_dirs=[numpy.get_include()],
-    scripts=[], #'pbtranscript_internal_validation/validate_smrtlink_isoseq_rc0.py'],
+    scripts=[],
     entry_points={'console_scripts': [
         'validate_smrtlink_isoseq_rc0.py = pbtranscript_internal_validation.validate_smrtlink_isoseq_rc0:main',
-        'validate_smrtlink_isoseq2_rc0.py = pbtranscript_internal_validation.validate_smrtlink_isoseq2_rc0:main',
     ]},
     package_dir={'pbtranscript_internal_validation': 'pbtranscript_internal_validation'},
     #package_data={'pbtranscript_internal_validation': []},

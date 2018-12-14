@@ -1,6 +1,5 @@
+pysam  >= 0.15.1
 pbcore >= 1.4.0
-pysam == 0.13
 pbcoretools >= 0.1.2
 pbcommand >= 0.3.12
-pbtranscript2 == 0.1.1
-isocollapse >= 0.1.1
+isocollapse >= 0.2.1
