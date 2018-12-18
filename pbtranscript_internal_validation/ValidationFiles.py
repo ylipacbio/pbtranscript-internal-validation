@@ -32,30 +32,6 @@ def make_readlength_csv(fasta_fn, csv_fn):
             writer.write('%s\t%s\n' % (read.name.split()[0], len(read.sequence)))
 
 
-def make_polymerase_readlength_csv(subreads_xml, csv_fn):
-    """Use HQ region length to approximate polymerase read lengths, and write them to csv
-    John Nguyen: Polymerase RL is essentially HQ region length, and HQ region length
-                 is a good proxy for polymerase readlength.
-    """
-    try:
-        from pbcore.io import SubreadSet
-        # Assuming all reads from one zmw are grouped
-        ds = SubreadSet(subreads_xml)
-        # dict: movie id --> movie name
-        movie_id_to_name = {movie_id: movie_name for movie_name, movie_id in ds.movieIds.iteritems()}
-
-        ends = defaultdict(lambda: 0)
-        for movie_id, zmw,  end in zip(ds.index['qId'], ds.index['holeNumber'], ds.index['qEnd']):
-            ends[(movie_id, zmw)] = max(end,  ends[(movie_id, zmw)])
-
-        writer = open(csv_fn, 'w')
-        writer.write("'name'\t'readlength'\n")
-        for movie_id, zmw in sorted(ends.keys()):
-            writer.write("%s/%s\t%s\n" % (movie_id_to_name[movie_id], zmw, ends[(movie_id, zmw)]))
-        writer.close()
-    except Exception as e:
-        log.warning("Could not obtain polymerase read length! %s", str(e))
-
 
 def tolist(x):
     """convert x to a list"""
@@ -319,7 +295,6 @@ class ValidationRunner(ValidationFiles):
     def __init__(self, root_dir, smrtlink_job_dir):
         super(ValidationRunner, self).__init__(root_dir=root_dir)
         self.smrtlink_job_dir = op.join(smrtlink_job_dir)
-        self.subreads_xml = get_subread_xml_from_job_path(self.smrtlink_job_dir)
         self.sl_job = SMRTLinkIsoSeq3Files(self.smrtlink_job_dir)
 
     @property
@@ -418,11 +393,6 @@ class ValidationRunner(ValidationFiles):
         for fasta_fn, csv_fn in z:
             make_readlength_csv(fasta_fn=fasta_fn, csv_fn=csv_fn)
         self.make_readlength_csv_for_polymerase()
-
-    def make_readlength_csv_for_polymerase(self):
-        """Make approximated read length csv for polymerase reads"""
-        make_polymerase_readlength_csv(subreads_xml=self.subreads_xml,
-                                       csv_fn=self.polymerase_readlength_csv)
 
     def make_readlength_csv_for_sirv_isoforms(self):
         """Make read length csv for representative isoforms collapsing to sirv"""

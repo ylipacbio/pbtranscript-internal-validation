@@ -121,7 +121,7 @@ def make_sane(args):
     if not op.exists(args.smrtlink_job_dir):
         raise IOError("SMRTLink job directory %s does not exist" % args.smrtlink_job_dir)
 
-    if not op.exists(args.reference):
+    if not op.exists(args.human_reference):
         raise IOError("Human (SIRV) reference %s/%s does not exist." % (args.human_reference))
 
     if not op.exists(args.gencode_gtf):
@@ -259,6 +259,9 @@ def get_parser():
     parser.add_argument("val_dir", help=helpstr)
     parser.add_argument('--make_readlength', default=False, action='store_true', help="Make read length csv.")
 
+    helpstr = "Human + SIRV reference"
+    parser.add_argument("--human_reference", type=str, default=C.HUMAN_SIRV_REFERENCE, help=helpstr)
+
     helpstr = "Gencode gtf file containing known human transcripts. default %r" % C.GENCODE_GTF
     parser.add_argument("--gencode_gtf", type=str, default=C.GENCODE_GTF, help=helpstr)
 
@@ -266,6 +269,8 @@ def get_parser():
     parser.add_argument("--sirv_truth_dir", type=str, default=C.SIRV_TRUTH_DIR, help=helpstr)
 
     parser.add_argument("--sample_name", type=str, default='sample_name', help="Sample name")
+
+    parser.add_argument("--nproc", type=int, default=C.NPROC, help="NProc")
     return parser
 
 

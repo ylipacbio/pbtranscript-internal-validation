@@ -10,6 +10,7 @@ class ValidationConstants(object):
     GENCODE_ROOT_DIR = "/pbi/dept/secondary/siv/testdata/isoseq/gencode"
     GENCODE_GTF = op.join(GENCODE_ROOT_DIR, "gencode.v25.annotation.gtf")
     HUMAN_TRANSCRIPTS_FA = op.join(GENCODE_ROOT_DIR, "gencode.v25.transcripts.fa")
+    HUMAN_SIRV_REFERENCE = "/pbi/dept/secondary/siv/testdata/isoseq/references/hg38_and_sirv/hg38_and_sirv/referenceset.xml"
 
     NPROC = 16
     SIRV_DATA_ROOT_DIR = "/pbi/dept/secondary/siv/testdata/isoseq/lexigoen-ground-truth"
