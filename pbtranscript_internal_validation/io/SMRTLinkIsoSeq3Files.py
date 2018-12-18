@@ -17,13 +17,15 @@ class SMRTLinkIsoSeq3Files(object):
         self.hq_isoforms_fq = f('pbcoretools.tasks.bam2fastq_transcripts-0', 'hq_transcripts.fastq')
         self.lq_isoforms_fq = f('pbcoretools.tasks.bam2fastq_transcripts-0', 'lq_transcripts.fastq')
         self.pbscala_sh = f('../pbscala-job.sh')
-        self.subreads_xml = get_subread_xml_from_job_path(root_dir)
+        try:
+            self.subreads_xml = get_subread_xml_from_job_path(root_dir)
+        except Exception:
+            self.subreads_xml = None
         self.ccs_xml = f('pbcoretools.tasks.gather_ccsset-1', 'file.consensusreadset.xml')
-        self.ccs_report_json = f('tasks', 'pbreports.tasks.ccs_report-0', 'ccs_report.json')
-
-        self.hq_transcript_ds = f('tasks', 'pbcoretools.tasks.consolidate_transcripts-0',
+        self.ccs_report_json = f('pbreports.tasks.ccs_report-0', 'ccs_report.json')
+        self.hq_transcript_ds = f('pbcoretools.tasks.consolidate_transcripts-0',
                                   'combined.hq.transcriptset.xml')  # HQ transcriptset
-        self.transcript_ds = f('tasks', 'pbcoretools.tasks.gather_transcripts-1',
+        self.transcript_ds = f('pbcoretools.tasks.gather_transcripts-1',
                                'file.transcriptset.xml')  # all transcriptset
 
     @property

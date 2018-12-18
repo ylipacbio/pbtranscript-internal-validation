@@ -3,19 +3,24 @@
 """
 Validate a smrtlink RC0 isoseq job with reference and gencode.
 """
+import os
 import os.path as op
 import argparse
 import sys
 import logging
 
+from collections import defaultdict
+from csv import DictReader
 from pbcore.io import FastaReader
 
-from pbtranscript.Utils import execute, realpath, mkdir, rmpath
-from pbtranscript.io import ChainConfig, ContigSetReaderWrapper, BLASRM4Reader
-#from pbtranscript.counting.chain_samples import chain_samples
-from . import ValidationFiles, ValidationRunner
-from . import ValidationConstants as C
-from .Utils import reseq, filter_sam_by_targets
+from isocollapse.independent.system import execute, realpath, mkdir, rmpath
+from isocollapse.libs import AlignmentFile
+from pbtranscript.io import ChainConfig, ContigSetReaderWrapper
+
+from pbtranscript.counting.chain_samples import chain_samples
+from .ValidationFiles import ValidationFiles, ValidationRunner
+from .Constants import ValidationConstants as C
+from .Utils import filter_sam_by_targets, map_to_reference
 from .io.SMRTLinkIsoSeq3Files import SMRTLinkIsoSeq3Files
 
 __author__ = 'etseng@pacb.com, yli@pacb.com'
@@ -32,14 +37,6 @@ def _get_num_reads(fn):
     for dummy_r in reader:
         n += 1
     return n
-
-
-def summarize_reseq(m4_fn):
-    """Summarize resequencing m4 output, return (num_mapped_reads, num_mapped_reference)"""
-    records = [r for r in BLASRM4Reader(m4_fn)]
-    n_mapped_reads = len(records)
-    n_mapped_refs = len(set([r.sID for r in records]))
-    return (n_mapped_reads, n_mapped_refs)
 
 
 def get_gtf_chromosomes(gtf_fn):
@@ -132,7 +129,10 @@ def make_sane(args):
     return args
 
 
-def run(smrtlink_job_dir, val_dir, human_reference, gencode_gtf, make_readlength, nproc, args):
+def run(smrtlink_job_dir, val_dir,
+        gencode_gtf, human_reference, hg_transcripts_fa, selected_hg_transcripts,
+        sirv_truth_dir, sirv_reference, sirv_transcripts_fa,
+        sample_name, nproc, make_readlength, args):
     """
     --- args for logging and tracing back.
     1) Collapse HQ isoforms from SMRTLink Iso-Seq3 (w/wo genome) job to hg38.
@@ -147,17 +147,18 @@ def run(smrtlink_job_dir, val_dir, human_reference, gencode_gtf, make_readlength
     log.info("Compare with gencode annotations.")
     runner.ln_gencode_gtf(gencode_gtf)
     # Collapse HQ isoforms to human and validate with MatchAnot,
-    collapse_to_reference(smrtlink_job_dir, human_reference, runner.collapse_to_hg_dir, nproc)
+    collapse_to_reference(runner, human_reference, runner.collapse_to_hg_dir, nproc)
 
     runner.make_readlength_csv_for_hg_isoforms()
 
-    #log.info("Reseq to human transcripts.")
-    # runner.reseq_to_human(target_fa=hg_transcripts_fa, selected_transcripts=selected_hg_transcripts.split(','))
+    log.info("Reseq to human transcripts.")
+    runner.reseq_to_human(target_fa=hg_transcripts_fa, selected_transcripts=selected_hg_transcripts.split(','))
 
     # for sirv isoforms
-    # runner.ln_sirv_truth_dir(sirv_truth_dir)
-    #validate_sirv_isoforms(SMRTLinkIsoSeqFilesCls, post_mapping_to_genome_runner_f)
-    # runner.make_readlength_csv_for_sirv_isoforms()
+    log.info("Reseq to SIRV transcripts.")
+    runner.ln_sirv_truth_dir(sirv_truth_dir)
+    validate_sirv_isoforms(runner, sirv_reference, sirv_transcripts_fa, sample_name, nproc)
+    runner.make_readlength_csv_for_sirv_isoforms()
 
     # write args and data files to README
     log.info("Writing args and data files to %s", runner.readme_txt)
@@ -192,26 +193,15 @@ def validate_human_using_matchAnnot(sorted_rep_bam, gencode_gtf, matchAnnot_out,
     csv_writer.close()
 
 
-def map_to_reference(readset_or_bam, referenceset_or_fasta, out_bam, nproc):
-    """
-    Map input readset or bam to reference set or fasta, and create output bam.
-    """
-    cmd = "pbmm2 {ref} {reads} {out_bam} --sort --preset ISOSEQ -j {nproc}".format(
-        ref=referenceset_or_fasta, reads=readset_or_bam, out_bam=out_bam, nproc=nproc)
-    log.debug(cmd)
-    execute(cmd)
-
-
-def collapse_to_reference(smrtlink_job_dir, referenceset_or_fasta, out_dir, nproc):
+def collapse_to_reference(runner, referenceset_or_fasta, out_dir, nproc):
     """Collapse HQ isoforms to SIRV, get collapsed isoforms in fq and SAM.
     Compare collapsed isoforms against SIRV ground truth,
     return TP, FP, FN
     """
     mkdir(out_dir)
 
-    # vfs = ValidationFiles(out_dir)
-    slfs = SMRTLinkIsoSeq3Files(smrtlink_job_dir)
-    aligned_hq_isoforms_bam = op.join(out_dir, 'aligned')
+    slfs = runner.sl_job
+    aligned_hq_isoforms_bam = op.join(out_dir, 'collapse_hq_transcripts_to_ref.bam')
 
     # Collapse HQ isoforms fastq to SIRV and make representive isoforms, then map
     # representative isoforms to reference, and sort output BAM
@@ -221,7 +211,7 @@ def collapse_to_reference(smrtlink_job_dir, referenceset_or_fasta, out_dir, npro
                      referenceset_or_fasta=referenceset_or_fasta,
                      out_bam=aligned_hq_isoforms_bam, nproc=nproc)
 
-    output_prefix = op.join(out_dir, 'touse')
+    output_prefix = op.join(out_dir, 'touse.')
 
     def g(s):
         return output_prefix + s
@@ -247,6 +237,127 @@ def collapse_to_reference(smrtlink_job_dir, referenceset_or_fasta, out_dir, npro
         allow_extra_5exon=C.ALLOW_EXTRA_5EXON)
 
 
+def summarize_reseq(bam_fn):
+    """Summarize pbmm2 bam file, return (num_mapped_reads, num_mapped_reference)"""
+    records = [r for r in AlignmentFile(bam_fn, 'rb')
+               if (not r.is_unmapped and not r.is_secondary and not r.is_supplementary)]
+    n_mapped_reads = len(set([r.query_name for r in records]))
+    n_mapped_refs = len(set([r.target_name for r in records]))
+    return (n_mapped_reads, n_mapped_refs)
+
+
+def validate_sirv_isoforms(runner, sirv_reference, sirv_transcripts_fa, sample_name, nproc):
+    """Collapse HQ isoforms to SIRV, get collapsed isoforms in fq and SAM.
+    Compare collapsed isoforms against SIRV ground truth,
+    return TP, FP, FN
+    """
+    slfs = runner.sl_job
+    # Collapse HQ isoforms fastq to SIRV and make representive isoforms, then map
+    # representative isoforms to gmap reference, and sort output SAM (sorted_rep_sam).
+    log.info("Collapsing HQ isoforms to SIRV, and mapping representative collapsed isoforms to SIRV.")
+    # Collapse HQ isoforms fastq to SIRV
+    collapse_to_reference(runner, sirv_reference, runner.collapse_to_sirv_dir, nproc)
+
+    # make a chain config
+    mkdir(runner.chain_sample_dir)
+    cfg = ChainConfig(sample_names=[C.SIRV_NAME, sample_name],
+                      sample_paths=[C.SIRV_TRUTH_DIR, runner.collapse_to_sirv_dir],
+                      group_fn=op.basename(runner.collapsed_to_sirv_group),
+                      gff_fn=op.basename(runner.collapsed_to_sirv_gff),
+                      abundance_fn=op.basename(runner.collapsed_to_sirv_abundance))
+    log.info("Write chain config")
+    cfg.write(runner.chain_sample_config)
+
+    # same as "chain_samples.py sample.config count_fl --fuzzy_junction=5"
+    cwd = os.getcwd()
+    # MUST run in chain_sample_dir, all_samples.* will be written to chain_sample_dir/
+    os.chdir(runner.chain_sample_dir)
+    chain_samples(cfg=cfg, field_to_use='count_fl', max_fuzzy_junction=5)
+    os.chdir(cwd)
+
+    # comapre with sirv, get n_total, n_fns, n_fps
+    n_total, n_fn, n_fp = compare_with_sirv(chained_ids_fn=runner.chained_ids_txt,
+                                            sirv_name=C.SIRV_NAME, sample_name=sample_name)
+
+    report = [('TP', n_total), ('FN', n_fn), ('FP', n_fp)]
+    with open(runner.sirv_report_txt, 'w') as f:
+        for k, v in report:
+            f.write("%s: %s\n" % (k, v))
+
+    # append more sirv validation metrics to report csv
+    desc_val_tuples = [
+        ("collapse_to_sirv.num_isoforms", _get_num_reads(runner.collapsed_to_sirv_rep_fq)),
+        ("collapse_to_sirv.num_TruePositive", n_total),
+        ("collapse_to_sirv.num_FalseNegative", n_fn),
+        ("collapse_to_sirv.num_FalsePositive", n_fp)
+    ]
+
+    # Reseq FLNC/HQ/LQ isoforms to SIRV transcripts
+    d = {'reseq_to_sirv.hq_isoforms': (runner.hq_isoforms_fa, runner.hq_sirv_bam),
+         'reseq_to_sirv.lq_isoforms': (runner.lq_isoforms_fa, runner.lq_sirv_bam),
+         'reseq_to_sirv.isoseq_flnc': (runner.isoseq_flnc_fa, runner.isoseq_flnc_sirv_bam)}
+    for name in d.keys():
+        fa_fn, bam_fn = d[name][0], d[name][1]
+        if os.stat(fa_fn).st_size != 0:
+            map_to_reference(fa_fn, sirv_transcripts_fa, bam_fn, nproc)
+            n_mapped_reads, n_mapped_refs = summarize_reseq(bam_fn)
+        else:
+            n_mapped_reads, n_mapped_refs = 0, 0
+        desc_val_tuples.append(('%s_n_mapped_reads' % name, n_mapped_reads))
+        desc_val_tuples.append(('%s_n_mapped_refs' % name, n_mapped_refs))
+
+    with open(runner.validation_report_csv, 'a') as f:
+        for desc, val in desc_val_tuples:
+            f.write("%s\t%s\n" % (desc, val))
+
+
+def compare_with_sirv(chained_ids_fn, sirv_name, sample_name):
+    """Compare SIRV results in all_samples.chained_ids.txt against SIRV ground truth,
+    return TP, FN, FP"""
+    tally = defaultdict(lambda: [])  # SIRV --> list of test ids that hit it (can be redundant sometimes due to fuzzy)
+
+    assert os.path.exists(chained_ids_fn)
+
+    FPs = []
+    FNs = []
+    for r in DictReader(open(chained_ids_fn, 'r'), delimiter='\t'):
+        if r[sirv_name] == 'NA':  # is false positive!
+            FPs.append(r[sample_name])
+        elif r[sample_name] == 'NA':  # is false negative
+            FNs.append(r[sirv_name])
+        else:
+            tally[r[sirv_name]].append(r[sample_name])
+
+    return len(tally), len(FNs), len(FPs)
+
+
+def add_human_arguments(parser):
+    """Human related args"""
+    def get_read_names(fa):
+        return ','.join([r.name.split()[0] for r in FastaReader(fa)])
+    _group = parser.add_argument_group("Human arguments")
+    _group.add_argument("--human_reference", type=str, default=C.HUMAN_SIRV_REFERENCE, help="Human + SIRV reference")
+    _group.add_argument("--hg_transcripts_fa", type=str, default=C.HUMAN_TRANSCRIPTS_FA,
+                        help="Human reference transcripts FASTA")
+    _group.add_argument("--selected_hg_transcripts", type=str, default=get_read_names(C.HUMAN_12_TRANSCRIPTS_FA),
+                        help="comma delimited human transcripts to analyze")
+    helpstr = "Gencode gtf file containing known human transcripts. default %r" % C.GENCODE_GTF
+    _group.add_argument("--gencode_gtf", type=str, default=C.GENCODE_GTF, help=helpstr)
+    return parser
+
+
+def add_sirv_arguments(parser):
+    """SIRV related args"""
+    _group = parser.add_argument_group("SIRV arguments")
+    _group.add_argument("--sirv_transcripts_fa", type=str, default=C.SIRV_TRANSCRIPTS_FA,
+                        help="SIRV reference transcripts FASTA")
+    helpstr = "SIRV ground truth dir with touse.group.txt, touse.gff, touse.abundance.txt, default %r" % C.SIRV_TRUTH_DIR
+    _group.add_argument("--sirv_truth_dir", type=str, default=C.SIRV_TRUTH_DIR, help=helpstr)
+    helpstr = "SIRV ground truth reference, default %r" % C.SIRV_REFERENCE,
+    _group.add_argument("--sirv_reference", type=str, default=C.SIRV_REFERENCE, help=helpstr)
+    return parser
+
+
 def get_parser():
     """Get argument parser."""
     helpstr = "Validate a SMRTLink Iso-Seq3 job on RC0 sample by comparing against Human GenCode Annotation and SIRV ground truth."
@@ -254,22 +365,14 @@ def get_parser():
 
     helpstr = "Smrtlink Iso-Seq3 job directory"
     parser.add_argument("smrtlink_job_dir", help=helpstr)
-
     helpstr = "Validation out directory"
     parser.add_argument("val_dir", help=helpstr)
+
+    add_human_arguments(parser)
+    add_sirv_arguments(parser)
+
     parser.add_argument('--make_readlength', default=False, action='store_true', help="Make read length csv.")
-
-    helpstr = "Human + SIRV reference"
-    parser.add_argument("--human_reference", type=str, default=C.HUMAN_SIRV_REFERENCE, help=helpstr)
-
-    helpstr = "Gencode gtf file containing known human transcripts. default %r" % C.GENCODE_GTF
-    parser.add_argument("--gencode_gtf", type=str, default=C.GENCODE_GTF, help=helpstr)
-
-    helpstr = "SIRV ground truth dir with touse.group.txt, touse.gff, touse.abundance.txt, default %r" % C.SIRV_TRUTH_DIR
-    parser.add_argument("--sirv_truth_dir", type=str, default=C.SIRV_TRUTH_DIR, help=helpstr)
-
     parser.add_argument("--sample_name", type=str, default='sample_name', help="Sample name")
-
     parser.add_argument("--nproc", type=int, default=C.NPROC, help="NProc")
     return parser
 
@@ -278,8 +381,14 @@ def main(args=sys.argv[1:]):
     """main"""
     args = get_parser().parse_args(args)
     make_sane(args)
-    run(smrtlink_job_dir=args.smrtlink_job_dir, val_dir=args.val_dir, human_reference=args.human_reference,
-        gencode_gtf=args.gencode_gtf, make_readlength=args.make_readlength, nproc=args.nproc, args=args)
+    run(smrtlink_job_dir=args.smrtlink_job_dir, val_dir=args.val_dir,
+        gencode_gtf=args.gencode_gtf, human_reference=args.human_reference,
+        hg_transcripts_fa=args.hg_transcripts_fa,
+        selected_hg_transcripts=args.selected_hg_transcripts,
+        sirv_truth_dir=args.sirv_truth_dir, sirv_reference=args.sirv_reference,
+        sirv_transcripts_fa=args.sirv_transcripts_fa,
+        sample_name=args.sample_name, nproc=args.nproc,
+        make_readlength=args.make_readlength, args=args)
 
 
 if __name__ == "__main__":

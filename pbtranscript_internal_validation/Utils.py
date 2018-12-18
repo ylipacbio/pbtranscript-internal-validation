@@ -10,29 +10,16 @@ import re
 from collections import defaultdict
 from pbcore.io import ContigSet, FastaWriter, FastqWriter
 from isocollapse.independent.system import execute, realpath, mv, backticks
-from pbtranscript.io import BLASRM4Reader
+from isocollapse.libs import AlignmentFile
 
 log = logging.getLogger(__file__)
-
-__all__ = [
-    "consolidate_xml",
-    "json_to_attr_dict",
-    "get_job_id_from_url",
-    "get_host_from_url",
-    "get_job_path_from_url",
-    "get_subread_xml_from_job_path",
-    "reseq",
-    "m42coverage",
-    "subset_dict",
-    "coverage2str"
-]
 
 
 def _bam2fastx(exe, src, dst):
     # generate flnc.fasta from flnc.bam
     tmp = dst + 'tmp'
     cmd = 'rm -f {dst} && {exe} {src} -o {tmp} && gunzip {tmp}.fasta.gz && mv {tmp}.fasta {dst}'.format(
-    dst=dst, src=src, tmp=tmp)
+        dst=dst, src=src, tmp=tmp, exe=exe)
     execute(cmd)
 
 
@@ -79,26 +66,31 @@ def json_to_attr_dict(json_fn):
         log.warning("Warning: could not get attributes from json report %s", json_fn)
     return ret
 
+
 def get_job_id_from_url(url_path):
     """Given a smrtlink job url (e.g., https://smrtlink-alpha.nanofluidics.com:8243/sl/#/analysis/job/13695), return job id 13695"""
     return url_path.split('/')[-1]
+
 
 def get_host_from_url(url_path):
     """Given a smrtlink job url, return host (e.g., 'http://smrtlink-alpha')"""
     return re.sub(r'https', 'http', ':'.join(url_path.split(':')[0:2]))
 
+
 def get_job_path_from_url(url_path):
     """Given a smrtlink job url, return file path to the job, e.g., '/pbi/.../013695'"""
-    host=get_host_from_url(url_path)
-    port=8081
+    host = get_host_from_url(url_path)
+    port = 8081
     job_id = get_job_id_from_url(url_path)
 
-    cmd="pbservice get-job --host {host} --port {port} {job_id} | grep 'path' |cut -f 2 -d ':' | tr -d ' '".format(host=host, port=port, job_id=job_id)
+    cmd = "pbservice get-job --host {host} --port {port} {job_id} | grep 'path' |cut -f 2 -d ':' | tr -d ' '".format(
+        host=host, port=port, job_id=job_id)
     ret, code, errmsg = backticks(cmd)
     if code != 0:
         raise RuntimeError("{cmd} failed: {err}".format(cmd=cmd, err=errmsg))
     job_path = ret[0]
     return job_path
+
 
 def get_subread_xml_from_job_path(job_path):
     """Given a smrtlink job path, return its asscoiated subread xml, either from workflow/datastore.json or pbscala-job.sh"""
@@ -110,7 +102,7 @@ def get_subread_xml_from_job_path(job_path):
         pass
     if 'PacBio.DataSet.SubreadSet' in d:
         return str(d['PacBio.DataSet.SubreadSet'])
-    else: # fall back to get eid_subread from pbscala-job.sh
+    else:  # fall back to get eid_subread from pbscala-job.sh
         try:
             pbscala_sh_fn = op.join(job_path, 'pbscala-job.sh')
             content = ''.join(x for x in open(pbscala_sh_fn, 'r'))
@@ -127,22 +119,21 @@ def get_subread_xml_from_job_path(job_path):
             except Exception as e:
                 raise ValueError("Could not find subread xml from smrtlink job path %s" % job_path)
 
-def reseq(fa_fn, ref_fn, out_m4, nproc=16):
-    """Resequencing, output m4"""
-    cmd = 'blasr %s %s --out %s --bestn 1 --minMatch 12 --maxMatch 15 --nCandidates 5 --nproc %s -m 4 --header ' % (fa_fn, ref_fn, out_m4, nproc)
-    execute(cmd)
 
-def m42coverage(in_m4):
-    """Return coverage of each target in BLASR M4 file"""
+def bam2coverage(in_bam):
     coverage_d = defaultdict(lambda: 0)
-    for rec in BLASRM4Reader(in_m4):
-        coverage_d[rec.sID] += 1
+    with AlignmentFile(in_bam, 'rb') as reader:
+        for r in reader:
+            if not r.is_unmapped and not r.is_secondary and not r.is_supplementary:
+                coverage_d[r.reference_name] += 1
     return coverage_d
+
 
 def subset_dict(d, selected_keys):
     """Given a dict {key: int} and a list of keys, return subset dict {key: int} for only key in keys.
     If a selected key is not in d, set its value to 0"""
-    return {key:(0 if key not in d else d[key]) for key in selected_keys}
+    return {key: (0 if key not in d else d[key]) for key in selected_keys}
+
 
 def coverage2str(coverage_d):
     """Convert a coverage dict {transcript: coverage} to string."""
@@ -175,3 +166,12 @@ def filter_sam_by_targets(in_sam, targets, out_sam, filtered_sam):
     out_writer.close()
     filtered_writer.close()
 
+
+def map_to_reference(readset_or_bam, referenceset_or_fasta, out_bam, nproc):
+    """
+    Map input readset or bam to reference set or fasta, and create output bam.
+    """
+    cmd = "pbmm2 align {reads} {ref} {out_bam} --sort --preset ISOSEQ -j {nproc}".format(
+        ref=referenceset_or_fasta, reads=readset_or_bam, out_bam=out_bam, nproc=nproc)
+    log.debug(cmd)
+    execute(cmd)

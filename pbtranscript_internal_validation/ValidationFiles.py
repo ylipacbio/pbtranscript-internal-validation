@@ -10,7 +10,7 @@ from pbcore.io import ContigSet, FastaReader, FastqReader
 from pbtranscript.io import ContigSetReaderWrapper
 from isocollapse.independent.system import realpath, rmpath, lnabs, mkdir, execute, touch
 from .Utils import (consolidate_xml, json_to_attr_dict, get_subread_xml_from_job_path,
-                    reseq, coverage2str, subset_dict, m42coverage)
+                    coverage2str, subset_dict, bam2coverage, map_to_reference)
 from .io.SMRTLinkIsoSeq3Files import SMRTLinkIsoSeq3Files
 
 FORMATTER = op.basename(__file__) + ':%(levelname)s:'+'%(message)s'
@@ -30,7 +30,6 @@ def make_readlength_csv(fasta_fn, csv_fn):
         cls = FastaReader if (fasta_fn.endswith('.gz') or fasta_fn.endswith('.fasta')) else ContigSetReaderWrapper
         for read in cls(fasta_fn):
             writer.write('%s\t%s\n' % (read.name.split()[0], len(read.sequence)))
-
 
 
 def tolist(x):
@@ -156,16 +155,16 @@ class ValidationFiles(object):
         return op.join(self.root_dir, 'reseq_to_sirv')
 
     @property
-    def hq_sirv_m4(self):
-        return op.join(self.reseq_to_sirv_dir, "hq_isoforms.sirv.m4")
+    def hq_sirv_bam(self):
+        return op.join(self.reseq_to_sirv_dir, "hq_isoforms.sirv.bam")
 
     @property
-    def lq_sirv_m4(self):
-        return op.join(self.reseq_to_sirv_dir, "lq_isoforms.sirv.m4")
+    def lq_sirv_bam(self):
+        return op.join(self.reseq_to_sirv_dir, "lq_isoforms.sirv.bam")
 
     @property
-    def isoseq_flnc_sirv_m4(self):
-        return op.join(self.reseq_to_sirv_dir, "isoseq_flnc.sirv.m4")
+    def isoseq_flnc_sirv_bam(self):
+        return op.join(self.reseq_to_sirv_dir, "isoseq_flnc.sirv.bam")
 
     @property
     def hq_isoforms_fa(self):
@@ -253,18 +252,18 @@ class ValidationFiles(object):
         return op.join(self.root_dir, "reseq_to_hg")
 
     @property
-    def hq_reseq_to_hg_m4(self):
-        """Resequence HQ isoforms to human transcripts using blasr, outputs in m4"""
-        return op.join(self.reseq_to_hg_dir, "hq_to_hg.m4")
+    def hq_reseq_to_hg_bam(self):
+        """Resequence HQ isoforms to human transcripts using blasr, outputs in bam"""
+        return op.join(self.reseq_to_hg_dir, "hq_to_hg.bam")
 
     @property
     def hq_reseq_to_hg_selected_transcripts_csv(self):
         return op.join(self.reseq_to_hg_dir, 'hq_reseq_to_hg_selected_transcripts.csv')
 
     @property
-    def flnc_reseq_to_hg_m4(self):
-        """Reseq flnc reads to human transcripts using blasr, outputs in m4"""
-        return op.join(self.reseq_to_hg_dir, "flnc_to_hg.m4")
+    def flnc_reseq_to_hg_bam(self):
+        """Reseq flnc reads to human transcripts using blasr, outputs in bam"""
+        return op.join(self.reseq_to_hg_dir, "flnc_to_hg.bam")
 
     @property
     def flnc_reseq_to_hg_selected_transcripts_csv(self):
@@ -335,8 +334,8 @@ class ValidationRunner(ValidationFiles):
 
     @property
     def reseq_human_files(self):
-        return [("hq_reseq_to_hg_m4", self.hq_reseq_to_hg_m4),
-                ("flnc_reseq_to_hg_m4", self.flnc_reseq_to_hg_m4),
+        return [("hq_reseq_to_hg_bam", self.hq_reseq_to_hg_bam),
+                ("flnc_reseq_to_hg_bam", self.flnc_reseq_to_hg_bam),
                 ("hq_reseq_to_hg_selected_transcripts_csv", self.hq_reseq_to_hg_selected_transcripts_csv),
                 ("flnc_reseq_to_hg_selected_transcripts_csv", self.flnc_reseq_to_hg_selected_transcripts_csv)]
 
@@ -392,7 +391,6 @@ class ValidationRunner(ValidationFiles):
         ]
         for fasta_fn, csv_fn in z:
             make_readlength_csv(fasta_fn=fasta_fn, csv_fn=csv_fn)
-        self.make_readlength_csv_for_polymerase()
 
     def make_readlength_csv_for_sirv_isoforms(self):
         """Make read length csv for representative isoforms collapsing to sirv"""
@@ -426,13 +424,13 @@ class ValidationRunner(ValidationFiles):
     def reseq_to_human(self, target_fa, selected_transcripts):
         """Resequence FLNC and HQ isoforms to human transcripts"""
         log.info('Locals: %s' % locals())
-        _files = [(self.hq_isoforms_fa, target_fa, self.hq_reseq_to_hg_m4, self.hq_reseq_to_hg_selected_transcripts_csv),
-                  (self.isoseq_flnc_fa, target_fa, self.flnc_reseq_to_hg_m4, self.flnc_reseq_to_hg_selected_transcripts_csv)]
-        for query_fa, target_fa, out_m4, out_csv in _files:
-            reseq(fa_fn=query_fa, ref_fn=target_fa, out_m4=out_m4)
+        _files = [(self.hq_isoforms_fa, target_fa, self.hq_reseq_to_hg_bam, self.hq_reseq_to_hg_selected_transcripts_csv),
+                  (self.isoseq_flnc_fa, target_fa, self.flnc_reseq_to_hg_bam, self.flnc_reseq_to_hg_selected_transcripts_csv)]
+        for query_fa, target_fa, out_bam, out_csv in _files:
+            map_to_reference(query_fa, target_fa, out_bam, 16)
             with open(out_csv, 'w') as writer:
                 writer.write(coverage2str(coverage_d=subset_dict(
-                    d=m42coverage(out_m4), selected_keys=selected_transcripts)))
+                    d=bam2coverage(out_bam), selected_keys=selected_transcripts)))
 
     def make_readme_txt(self, args):
         """Write args and data files to README file."""
@@ -443,4 +441,5 @@ class ValidationRunner(ValidationFiles):
 
             files = self.common_files + self.collapse_human_files + self.reseq_human_files + self.sirv_files
             for desc, fn in files:
-                writer.write("%s=%s\n" % (desc, fn))
+                if op.exists(fn):
+                    writer.write("%s=%s\n" % (desc, fn))
