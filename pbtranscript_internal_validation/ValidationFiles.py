@@ -207,9 +207,9 @@ class ValidationFiles(object):
         return op.join(self.collapse_to_sirv_dir, "touse.fastq")
 
     @property
-    def collapsed_to_hg_rep_sam(self):
+    def collapsed_to_hg_rep_bam(self):
         """sorted alignments mapping isoforms to SIRV"""
-        return op.join(self.collapse_to_hg_dir, "touse.rep.sam")
+        return op.join(self.collapse_to_hg_dir, "touse.rep.bam")
 
     @property
     def collapsed_to_hg_gff(self):
@@ -244,7 +244,7 @@ class ValidationFiles(object):
     @property
     def matchAnnot_out(self):
         """MatchAnot output"""
-        return self.collapsed_to_hg_rep_sam + ".matchAnnot.txt"
+        return self.collapsed_to_hg_rep_bam + ".matchAnnot.txt"
 
     @property
     def reseq_to_hg_dir(self):
@@ -270,9 +270,9 @@ class ValidationFiles(object):
         return op.join(self.reseq_to_hg_dir, 'flnc_reseq_to_hg_selected_transcripts.csv')
 
     @property
-    def collapsed_to_sirv_rep_sam(self):
+    def collapsed_to_sirv_rep_bam(self):
         """sorted alignments mapping isoforms to SIRV"""
-        return op.join(self.collapse_to_sirv_dir, "touse.rep.sam")
+        return op.join(self.collapse_to_sirv_dir, "touse.rep.bam")
 
     @property
     def collapsed_to_hg_rep_readlength_csv(self):
@@ -315,7 +315,6 @@ class ValidationRunner(ValidationFiles):
             ("consensus_isoforms_readlength_csv", self.consensus_isoforms_readlength_csv),
             ("hq_readlength_csv", self.hq_readlength_csv),
             ("lq_readlength_csv", self.lq_readlength_csv),
-
             ("isoseq_flnc_fasta", self.isoseq_flnc_fa),
             ("consensus_isoforms_fasta", self.consensus_isoforms_fa),
             ("hq_isoforms_fasta", self.hq_isoforms_fa)
@@ -327,7 +326,7 @@ class ValidationRunner(ValidationFiles):
         return [
             ("gencode_gtf", self.gencode_gtf),
             ("collapsed_to_hg_rep_fastq", self.collapsed_to_hg_rep_fq),
-            ("collapsed_to_hg_rep_sam", self.collapsed_to_hg_rep_sam),
+            ("collapsed_to_hg_rep_bam", self.collapsed_to_hg_rep_bam),
             ("collapsed_to_hg_rep_readlength_csv", self.collapsed_to_hg_rep_readlength_csv),
             ("matchAnnot_out", self.matchAnnot_out)
         ]
@@ -344,7 +343,7 @@ class ValidationRunner(ValidationFiles):
         """sirv related files."""
         return [
             ("collapsed_to_sirv_rep_fastq", self.collapsed_to_sirv_rep_fq),
-            ("collapsed_to_sirv_rep_sam", self.collapsed_to_sirv_rep_sam),
+            ("collapsed_to_sirv_rep_bam", self.collapsed_to_sirv_rep_bam),
             ("collapsed_to_sirv_rep_readlength_csv", self.collapsed_to_sirv_rep_readlength_csv),
             ("chained_ids_txt", self.chained_ids_txt)
         ]

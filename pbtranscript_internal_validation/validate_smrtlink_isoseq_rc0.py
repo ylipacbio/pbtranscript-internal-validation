@@ -13,14 +13,14 @@ from collections import defaultdict
 from csv import DictReader
 from pbcore.io import FastaReader
 
-from isocollapse.independent.system import execute, realpath, mkdir, rmpath
+from isocollapse.independent.system import execute, realpath, mkdir, rmpath, lnabs
 from isocollapse.libs import AlignmentFile
 from pbtranscript.io import ChainConfig, ContigSetReaderWrapper
 
 from pbtranscript.counting.chain_samples import chain_samples
 from .ValidationFiles import ValidationFiles, ValidationRunner
 from .Constants import ValidationConstants as C
-from .Utils import filter_sam_by_targets, map_to_reference
+from .Utils import filter_sam_by_targets, map_to_reference, reseq
 from .io.SMRTLinkIsoSeq3Files import SMRTLinkIsoSeq3Files
 
 __author__ = 'etseng@pacb.com, yli@pacb.com'
@@ -71,11 +71,11 @@ def validate_with_Gencode(sorted_rep_bam, gencode_gtf, match_out):
     log.info("Filtering alignments not mapping to %r", gtf_chrs)
     out_sam = sorted_rep_bam + ".gtf_chrs.sam"
     filtered_sam = sorted_rep_bam + ".not_gtf_chrs.sam"
-    filter_sam_by_targets(in_sam=sorted_rep_bam, targets=gtf_chrs,
+    filter_sam_by_targets(in_sam=sorted_rep_sam, targets=gtf_chrs,
                           out_sam=out_sam, filtered_sam=filtered_sam)
 
     log.info("Writing matchAnnot output to %s", match_out)
-    cmd = "matchAnnot.py --gtf={0} {1} > {2}".format(gencode_gtf, sorted_rep_bam, match_out)
+    cmd = "matchAnnot.py --gtf={0} {1} > {2}".format(gencode_gtf, sorted_rep_sam, match_out)
     execute(cmd)
 
 
@@ -147,19 +147,20 @@ def run(smrtlink_job_dir, val_dir,
     log.info("Compare with gencode annotations.")
     runner.ln_gencode_gtf(gencode_gtf)
     # Collapse HQ isoforms to human and validate with MatchAnot,
-    collapse_to_reference(runner, human_reference, runner.collapse_to_hg_dir, nproc)
-    log.info("Reseq to human reference.")
-    map_to_reference(runner.collapsed_to_hg_rep_fq, human_reference, runner.collapsed_to_hg_rep_sam, nproc)
+    _, out_rep_bam = collapse_to_reference(runner, human_reference, runner.collapse_to_hg_dir, nproc)
+    lnabs(out_rep_bam, runner.collapsed_to_hg_rep_bam)
+
     log.info("Reseq to human transcripts.")
     runner.reseq_to_human(target_fa=hg_transcripts_fa, selected_transcripts=selected_hg_transcripts.split(','))
     log.info("make readlength plot for Human isoforms")
     runner.make_readlength_csv_for_hg_isoforms()
 
-    validate_human_using_matchAnnot(
-            sorted_rep_bam=runner.collapsed_to_hg_rep_sam, gencode_gtf=gencode_gtf,
-            matchAnnot_out=runner.matchAnnot_out, hg_report_txt=runner.matchAnnot_out,
-            validation_report_csv=runner.validation_report_csv,
-            collapsed_to_hg_rep_fq=runner.collapsed_to_hg_rep_fq)
+    if False: # disable matchAnnot which does not read minimap2 SAM files.
+        validate_human_using_matchAnnot(
+                sorted_rep_bam=runner.collapsed_to_hg_rep_bam, gencode_gtf=gencode_gtf,
+                matchAnnot_out=runner.matchAnnot_out, hg_report_txt=runner.matchAnnot_out,
+                validation_report_csv=runner.validation_report_csv,
+                collapsed_to_hg_rep_fq=runner.collapsed_to_hg_rep_fq)
 
     # for sirv isoforms
     log.info("Reseq to SIRV transcripts.")
@@ -226,16 +227,18 @@ def collapse_to_reference(runner, referenceset_or_fasta, out_dir, nproc):
     log.info("Collapsing HQ isoforms to SIRV.")
     from isocollapse.tasks.collapse_mapped_isoforms import run_main as isocollapse_runner
     import isocollapse.independent.Constants as C
+    out_rep_fq, out_rep_bam = g('fastq'), g('rep.aligned.bam')
+    out_abundance = g('abundance.txt')
     isocollapse_runner(
         i_hq_transcript_ds=slfs.hq_transcript_ds,
         i_transcriptaln_ds=aligned_hq_isoforms_bam,
         i_all_transcript_ds=slfs.transcript_ds,
         i_flnc_bam=slfs.flnc_bam,
         output_prefix=output_prefix,
-        out_isoforms=g('fastq'),
+        out_isoforms=out_rep_fq,
         out_gff=g('gff'),
         out_group=g('group.txt'),
-        out_abundance=g('abundance.txt'),
+        out_abundance=out_abundance,
         out_read_stat=g('readstat.txt'),
         out_report_json=g('report.json'),
         min_aln_coverage=C.MIN_ALN_COVERAGE.val,
@@ -243,13 +246,37 @@ def collapse_to_reference(runner, referenceset_or_fasta, out_dir, nproc):
         max_fuzzy_junction=C.MAX_FUZZY_JUNCTION.val,
         allow_extra_5exon=C.ALLOW_EXTRA_5EXON)
 
+    log.info("Reseq representitive FASTQ to reference.")
+    reseq(readset_or_bam=out_rep_fq,
+          referenceset_or_fasta=referenceset_or_fasta,
+          out_bam=g('rep.aligned.bam'), nproc=nproc)
+
+    # make a copy of original abundance file and override out_abundance file
+    out_abundance_original = out_abundance + '.original.txt'
+    execute('cp {} {}'.format(out_abundance, out_abundance_original))
+    convert_abundance_file(out_abundance_original, out_abundance)
+    return (out_rep_fq, out_rep_bam)
+
+
+def convert_abundance_file(in_abundance, out_abundance):
+    """Convert isoseq abundance file to isoseq3 abundance file"""
+    from isocollapse.io.AbundanceIO import AbundanceReader as AbundanceReader3
+    from pbtranscript.io import AbundanceWriter, AbundanceRecord
+    with AbundanceReader3(in_abundance) as reader:
+        with AbundanceWriter(out_abundance, None, reader.total_fl, 0, 0) as writer:
+           for r in reader:
+               convert_r = AbundanceRecord(
+                       pbid=r.pbid, count_fl=r.count_fl, count_nfl=0, count_nfl_amb=0,
+                       norm_fl=r.norm_fl, norm_nfl=0, norm_nfl_amb=0)
+               writer.writeRecord(convert_r)
+
 
 def summarize_reseq(bam_fn):
     """Summarize pbmm2 bam file, return (num_mapped_reads, num_mapped_reference)"""
     records = [r for r in AlignmentFile(bam_fn, 'rb')
                if (not r.is_unmapped and not r.is_secondary and not r.is_supplementary)]
     n_mapped_reads = len(set([r.query_name for r in records]))
-    n_mapped_refs = len(set([r.target_name for r in records]))
+    n_mapped_refs = len(set([r.reference_name for r in records]))
     return (n_mapped_reads, n_mapped_refs)
 
 

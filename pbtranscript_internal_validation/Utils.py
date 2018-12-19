@@ -145,6 +145,16 @@ def coverage2str(coverage_d):
 def filter_sam_by_targets(in_sam, targets, out_sam, filtered_sam):
     """ Read alignments in in_sam, copy alignments with targe name in targets to out_sam,
     write other alignments to filtered_sam."""
+    if in_sam.endswith('.bam'):
+        cmd = 'samtools view -h {} -o {}.sam'.format(in_sam, in_sam)
+        execute(cmd)
+        in_sam = in_sam + '.sam'
+
+    def ref_to_chr_ref(ref):
+        if 'chr{}'.format(ref) in targets:
+            return 'chr{}'.format(ref)
+        return ref
+
     log.info("Writing alignments mapping to %r in %s", targets, out_sam)
     log.info("Writing alignments not mapping to %r in %s", targets, filtered_sam)
     out_writer = open(out_sam, 'w')
@@ -152,14 +162,20 @@ def filter_sam_by_targets(in_sam, targets, out_sam, filtered_sam):
     for line in open(in_sam, 'r'):
         if line.startswith('#') or line.startswith('@'):
             # copy header to both out_sam and filtered_sam
+            if line.startswith('@SQ\tSN'):
+                ref = line.split('\t')[1][len('SN:'):]
+                ref = ref_to_chr_ref(ref)
+                newline = '@SQ\tSN:{}\t'.format(ref) + '\t'.join(line.split('\t')[2:])
+                line = newline
             out_writer.write(line)
             filtered_writer.write(line)
         else:
             if len(line.strip()) == 0:
                 continue
             else:
-                target = line.split('\t')[2].strip()
-                if target in targets:
+                ref = line.split('\t')[2].strip()
+                ref = ref_to_chr_ref(ref)
+                if ref in targets:
                     out_writer.write(line)
                 else:
                     filtered_writer.write(line)
@@ -181,7 +197,18 @@ def reseq(readset_or_bam, referenceset_or_fasta, out_bam, nproc):
     pbmm2 align query.fasta ref.fasta out.bam has a bug displaying incorrect SQ lines.
     Have to fallback to minimap2
     """
-    cmd = "minimap2 {ref} {reads} -t {nproc} -x map-pb -o {out_bam}.sam && samtools view -h {out_bam}.sam -o {out_bam}".format(
-        ref=referenceset_or_fasta, reads=readset_or_bam, out_bam=out_bam, nproc=nproc)
+    def to_fasta(referenceset_or_fasta):
+        if referenceset_or_fasta.endswith('.fasta') or referenceset_or_fasta.endswith('.fa'):
+            return referenceset_or_fasta
+        elif referenceset_or_fasta.endswith('.xml'):
+            from pbcore.io import ReferenceSet
+            return ReferenceSet(referenceset_or_fasta).toExternalFiles()[0]
+        else:
+            raise ValueError("{} is not a reference!".format(referenceset_or_fasta))
+
+    ref_fasta = to_fasta(referenceset_or_fasta)
+    isoseq_args = '-ax splice -uf -C5 '
+    cmd = "minimap2 -t {nproc} {args} -a {ref} {reads} > {out_bam}.sam && samtools view -h {out_bam}.sam -o {out_bam}".format(
+        ref=ref_fasta, reads=readset_or_bam, out_bam=out_bam, nproc=nproc, args=isoseq_args)
     log.debug(cmd)
     execute(cmd)
