@@ -10,7 +10,7 @@ from pbcore.io import ContigSet, FastaReader, FastqReader
 from pbtranscript.io import ContigSetReaderWrapper
 from isocollapse.independent.system import realpath, rmpath, lnabs, mkdir, execute, touch
 from .Utils import (consolidate_xml, json_to_attr_dict, get_subread_xml_from_job_path,
-                    coverage2str, subset_dict, bam2coverage, map_to_reference)
+                    coverage2str, subset_dict, bam2coverage, reseq)
 from .io.SMRTLinkIsoSeq3Files import SMRTLinkIsoSeq3Files
 
 FORMATTER = op.basename(__file__) + ':%(levelname)s:'+'%(message)s'
@@ -427,7 +427,7 @@ class ValidationRunner(ValidationFiles):
         _files = [(self.hq_isoforms_fa, target_fa, self.hq_reseq_to_hg_bam, self.hq_reseq_to_hg_selected_transcripts_csv),
                   (self.isoseq_flnc_fa, target_fa, self.flnc_reseq_to_hg_bam, self.flnc_reseq_to_hg_selected_transcripts_csv)]
         for query_fa, target_fa, out_bam, out_csv in _files:
-            map_to_reference(query_fa, target_fa, out_bam, 16)
+            reseq(query_fa, target_fa, out_bam, 16)
             with open(out_csv, 'w') as writer:
                 writer.write(coverage2str(coverage_d=subset_dict(
                     d=bam2coverage(out_bam), selected_keys=selected_transcripts)))

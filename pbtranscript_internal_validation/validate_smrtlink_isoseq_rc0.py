@@ -148,11 +148,18 @@ def run(smrtlink_job_dir, val_dir,
     runner.ln_gencode_gtf(gencode_gtf)
     # Collapse HQ isoforms to human and validate with MatchAnot,
     collapse_to_reference(runner, human_reference, runner.collapse_to_hg_dir, nproc)
-
-    runner.make_readlength_csv_for_hg_isoforms()
-
+    log.info("Reseq to human reference.")
+    map_to_reference(runner.collapsed_to_hg_rep_fq, human_reference, runner.collapsed_to_hg_rep_sam, nproc)
     log.info("Reseq to human transcripts.")
     runner.reseq_to_human(target_fa=hg_transcripts_fa, selected_transcripts=selected_hg_transcripts.split(','))
+    log.info("make readlength plot for Human isoforms")
+    runner.make_readlength_csv_for_hg_isoforms()
+
+    validate_human_using_matchAnnot(
+            sorted_rep_bam=runner.collapsed_to_hg_rep_sam, gencode_gtf=gencode_gtf,
+            matchAnnot_out=runner.matchAnnot_out, hg_report_txt=runner.matchAnnot_out,
+            validation_report_csv=runner.validation_report_csv,
+            collapsed_to_hg_rep_fq=runner.collapsed_to_hg_rep_fq)
 
     # for sirv isoforms
     log.info("Reseq to SIRV transcripts.")
@@ -205,7 +212,7 @@ def collapse_to_reference(runner, referenceset_or_fasta, out_dir, nproc):
 
     # Collapse HQ isoforms fastq to SIRV and make representive isoforms, then map
     # representative isoforms to reference, and sort output BAM
-    log.info("Map HQ isoforms to SIRV.")
+    log.info("Map HQ isoforms to reference {}.".format(referenceset_or_fasta))
     # Collapse HQ isoforms fastq to SIRV
     map_to_reference(readset_or_bam=slfs.hq_transcript_ds,
                      referenceset_or_fasta=referenceset_or_fasta,
@@ -299,7 +306,7 @@ def validate_sirv_isoforms(runner, sirv_reference, sirv_transcripts_fa, sample_n
     for name in d.keys():
         fa_fn, bam_fn = d[name][0], d[name][1]
         if os.stat(fa_fn).st_size != 0:
-            map_to_reference(fa_fn, sirv_transcripts_fa, bam_fn, nproc)
+            reseq(fa_fn, sirv_transcripts_fa, bam_fn, nproc)
             n_mapped_reads, n_mapped_refs = summarize_reseq(bam_fn)
         else:
             n_mapped_reads, n_mapped_refs = 0, 0

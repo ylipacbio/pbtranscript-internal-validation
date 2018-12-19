@@ -175,3 +175,13 @@ def map_to_reference(readset_or_bam, referenceset_or_fasta, out_bam, nproc):
         ref=referenceset_or_fasta, reads=readset_or_bam, out_bam=out_bam, nproc=nproc)
     log.debug(cmd)
     execute(cmd)
+
+def reseq(readset_or_bam, referenceset_or_fasta, out_bam, nproc):
+    """
+    pbmm2 align query.fasta ref.fasta out.bam has a bug displaying incorrect SQ lines.
+    Have to fallback to minimap2
+    """
+    cmd = "minimap2 {ref} {reads} -t {nproc} -x map-pb -o {out_bam}.sam && samtools view -h {out_bam}.sam -o {out_bam}".format(
+        ref=referenceset_or_fasta, reads=readset_or_bam, out_bam=out_bam, nproc=nproc)
+    log.debug(cmd)
+    execute(cmd)
