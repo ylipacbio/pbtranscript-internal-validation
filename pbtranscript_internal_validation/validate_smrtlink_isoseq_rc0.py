@@ -340,7 +340,8 @@ def validate_sirv_isoforms(runner, sirv_reference, sirv_transcripts_fa, sample_n
         desc_val_tuples.append(('%s_n_mapped_reads' % name, n_mapped_reads))
         desc_val_tuples.append(('%s_n_mapped_refs' % name, n_mapped_refs))
 
-    with open(runner.validation_report_csv, 'a') as f:
+    with open(runner.validation_report_csv, 'w') as f:
+        f.write('name\tvalue\n')
         for desc, val in desc_val_tuples:
             f.write("%s\t%s\n" % (desc, val))
 

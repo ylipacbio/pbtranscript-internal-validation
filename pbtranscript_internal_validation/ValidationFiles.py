@@ -308,7 +308,6 @@ class ValidationRunner(ValidationFiles):
             ("root_dir", self.root_dir),
             ("smrtlink_dir", self.smrtlink_job_dir),
             ("validation_report_csv", self.validation_report_csv),
-
             ("polymerase_readlength_csv", self.polymerase_readlength_csv),
             ("ccs_readlength_csv", self.ccs_readlength_csv),
             ("flnc_readlength_csv", self.flnc_readlength_csv),
