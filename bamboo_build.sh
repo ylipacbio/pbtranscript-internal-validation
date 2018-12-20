@@ -67,14 +67,6 @@ else
     pip install -v --user --find-links=${WHEELHOUSE} --no-index pbtranscript
 fi
 
-if [ -e $THISDIR/../pbtranscript2 ] ; then
-    pushd ../pbtranscript2
-    pip install -v --user --find-links=${WHEELHOUSE} --no-index --no-deps --edit .
-    popd
-else
-    pip install -v --user --find-links=${WHEELHOUSE} --no-index pbtranscript2
-fi
-
 if [ -e $THISDIR/../isocollapse ] ; then
     pushd ../isocollapse
     pip install -v --user --find-links=${WHEELHOUSE} --no-index --no-deps --edit  .
@@ -87,7 +79,6 @@ python -c "import pbcore"
 python -c "import pbcoretools"
 python -c "import pbcommand"
 python -c "import pbtranscript"
-python -c "import pbtranscript2"
 python -c "import isocollapse"
 
 pip install -v --user --edit . 
