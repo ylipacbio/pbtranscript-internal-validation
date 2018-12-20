@@ -312,6 +312,8 @@ def validate_sirv_isoforms(runner, sirv_reference, sirv_transcripts_fa, sample_n
     # comapre with sirv, get n_total, n_fns, n_fps
     n_total, n_fn, n_fp = compare_with_sirv(chained_ids_fn=runner.chained_ids_txt,
                                             sirv_name=C.SIRV_NAME, sample_name=sample_name)
+    n_flnc = _get_num_reads(runner.isoseq_flnc_fa)
+    n_fp_per_million_flnc = n_fp / n_flnc * 1000000
 
     report = [('TP', n_total), ('FN', n_fn), ('FP', n_fp)]
     with open(runner.sirv_report_txt, 'w') as f:
@@ -323,7 +325,8 @@ def validate_sirv_isoforms(runner, sirv_reference, sirv_transcripts_fa, sample_n
         ("collapse_to_sirv.num_isoforms", _get_num_reads(runner.collapsed_to_sirv_rep_fq)),
         ("collapse_to_sirv.num_TruePositive", n_total),
         ("collapse_to_sirv.num_FalseNegative", n_fn),
-        ("collapse_to_sirv.num_FalsePositive", n_fp)
+        ("collapse_to_sirv.num_FalsePositive", n_fp),
+        ("collapse_to_sirv.num_FalsePositive_per_million_FLNC", n_fp_per_million_flnc)
     ]
 
     # Reseq FLNC/HQ/LQ isoforms to SIRV transcripts
