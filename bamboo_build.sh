@@ -8,7 +8,7 @@ ls -larth $THISDIR/..
 
 make clean
 
-WHEELHOUSE=/home/cdunn/wheelhouse/gcc-6
+WHEELHOUSE=/mnt/software/p/python/wheelhouse/develop
 ls -larth ${WHEELHOUSE}
 
 # Build with dependencies (fairly fast)
